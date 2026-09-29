@@ -26,6 +26,9 @@ function mountLoginCompleteControl() {
         bottom: 24px;
         z-index: 2147483647;
         display: flex;
+        flex-wrap: wrap;
+        box-sizing: border-box;
+        max-width: calc(100vw - 48px);
         align-items: center;
         gap: 12px;
         padding: 12px 12px 12px 16px;
@@ -37,18 +40,21 @@ function mountLoginCompleteControl() {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         backdrop-filter: blur(12px);
       }
-      .copy { display: grid; gap: 3px; min-width: 190px; }
+      .copy { display: grid; flex: 1 1 190px; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
       strong { font-size: 13px; line-height: 1.2; }
-      small { color: #77879a; font-size: 11px; line-height: 1.35; }
+      small { color: #77879a; font-size: 13px; line-height: 1.35; }
       button {
         min-width: 128px;
-        height: 40px;
+        min-height: 40px;
+        flex-shrink: 0;
+        margin-left: auto;
+        white-space: nowrap;
         padding: 0 16px;
         border: 0;
         border-radius: 10px;
         background: #1677e8;
         color: #fff;
-        font: 650 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font: 650 15px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         cursor: pointer;
         box-shadow: 0 6px 16px rgba(22, 119, 232, .24);
       }

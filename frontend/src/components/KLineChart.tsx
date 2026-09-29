@@ -63,8 +63,8 @@ export function KLineChart({ lines, symbol, state = 'ready', mode = 'daily', per
 	const sorted = [...lines].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
 	const width = 960;
 	const height = 430;
-	const left = 52;
-	const right = 72;
+	const left = 68;
+	const right = 84;
 	const chartTop = 20;
 	const chartBottom = 316;
 	const volumeTop = 338;
