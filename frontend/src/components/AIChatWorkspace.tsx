@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppSettings, BackendConfig, LLMModelOption, LLMModelsResult, LLMProfile, requestJSON } from '../lib/backend';
-import { llmProviderDefaultModel, llmProviderName } from '../lib/llm-providers';
+import { llmProviderDefaultModel } from '../lib/llm-providers';
 import {
 	ChatConversation,
 	ChatMessage,
@@ -78,7 +78,6 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 	const [draft, setDraft] = useState('');
 	const [sending, setSending] = useState(false);
 	const [modelState, setModelState] = useState<ModelState>('loading');
-	const [modelLabel, setModelLabel] = useState('读取模型配置');
 	const [llmConfig, setLLMConfig] = useState<ChatLLMConfig | null>(null);
 	const [llmProfiles, setLLMProfiles] = useState<LLMProfile[]>([]);
 	const [activeLLMProfileID, setActiveLLMProfileID] = useState('');
@@ -98,7 +97,7 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 	const [clarifyDraft, setClarifyDraft] = useState('');
 	const abortRef = useRef<AbortController | null>(null);
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-	const messageEndRef = useRef<HTMLDivElement | null>(null);
+	const messageStageRef = useRef<HTMLDivElement | null>(null);
 	const modelMessageTimerRef = useRef<number | null>(null);
 
 	const activeConversation = useMemo(
@@ -120,7 +119,8 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 	}, [conversations]);
 
 	useEffect(() => {
-		messageEndRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
+		const stage = messageStageRef.current;
+		stage?.scrollTo({ top: stage.scrollHeight, behavior: 'smooth' });
 	}, [activeConversation?.messages.length, sending]);
 
 	useEffect(() => {
@@ -146,7 +146,6 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 	const loadModel = useCallback(async () => {
 		if (!config) {
 			setModelState('error');
-			setModelLabel('后端尚未连接');
 			setLLMConfig(null);
 			setModelOptions([]);
 			setModelListState('error');
@@ -172,9 +171,6 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 			const usable = agent.available && agent.configured;
 			setLLMConfig(nextLLM);
 			setModelState(usable ? 'ready' : agent.available ? 'missing' : 'error');
-			setModelLabel(usable
-				? `${payload.data.agent_runtime === 'codex' ? 'Codex' : 'Hermes'} · ${llmProviderName(provider)} · ${model}`
-				: agent.message || (agent.available ? '需要配置 Agent 模型' : 'Agent 运行时不可用'));
 
 			try {
 				const models = await requestChatModels(config, nextLLM, payload.data.active_llm_profile_id || profiles[0]?.id || '');
@@ -188,11 +184,10 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 			}
 		} catch (error) {
 			setModelState('error');
-			setModelLabel(error instanceof Error ? error.message : '模型配置读取失败');
 			setLLMConfig(null);
 			setModelOptions([]);
 			setModelListState('error');
-			setModelListMessage('模型配置读取失败');
+			setModelListMessage(error instanceof Error ? error.message : '模型配置读取失败');
 		}
 	}, [config]);
 
@@ -239,7 +234,6 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 			setConversations((current) => clearAgentSessionIDs(current));
 			const usable = payload.data.agent.available && payload.data.agent.configured;
 			setModelState(usable ? 'ready' : payload.data.agent.available ? 'missing' : 'error');
-			setModelLabel(usable ? `${payload.data.agent_runtime === 'codex' ? 'Codex' : 'Hermes'} · ${llmProviderName(active.provider)} · ${active.model}` : payload.data.agent.message || '需要配置 Agent 模型');
 			setModelSwitchState('saved');
 			setModelSwitchMessage(`已切换为 ${profile.name}，下一条消息生效`);
 			window.setTimeout(() => { setModelSwitchState('idle'); setModelSwitchMessage(''); }, 3500);
@@ -266,9 +260,6 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 			setConversations((current) => clearAgentSessionIDs(current));
 			const usable = agent.available && agent.configured;
 			setModelState(usable ? 'ready' : agent.available ? 'missing' : 'error');
-			setModelLabel(usable
-				? `${payload.data.agent_runtime === 'codex' ? 'Codex' : 'Hermes'} · ${llmProviderName(llm.provider)} · ${llm.model}`
-				: agent.message || (agent.available ? '需要配置 Agent 模型' : 'Agent 运行时不可用'));
 			setModelSwitchState('saved');
 			setModelSwitchMessage(`已切换为 ${llm.model}，下一条消息生效`);
 			modelMessageTimerRef.current = window.setTimeout(() => {
@@ -369,7 +360,6 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
             setAgentRuntime(runtime);
             setLLMConfig(latest.llm);
             setActiveLLMProfileID(latest.active_llm_profile_id);
-            setModelLabel(`${runtime === 'codex' ? 'Codex' : 'Hermes'} · ${llmProviderName(latest.llm.provider)} · ${latest.llm.model}`);
             modelKey = chatModelKey(latest.llm, latest.active_llm_profile_id, runtime);
             const agentSessionID = resumableAgentSessionID(current, modelKey);
 			const seedMessages = current.messages
@@ -468,7 +458,7 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 		<section className="ai-chat-workspace">
 			<aside className="ai-thread-rail">
 				<header><div><span>AI WORKSPACE</span><strong>对话记录</strong></div><button type="button" onClick={newConversation} title="新建对话"><MessageSquarePlus size={17} /></button></header>
-				<div className="ai-thread-list">
+				<div className="ai-thread-list" role="region" aria-label="对话列表" tabIndex={0}>
 					{conversations.map((conversation) => (
 						<button type="button" className={conversation.id === activeID ? 'active' : ''} onClick={() => setActiveID(conversation.id)} key={conversation.id}>
 							<PanelLeft size={14} />
@@ -478,16 +468,10 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 					))}
 					{!conversations.length && <div className="ai-thread-empty"><Bot size={22} /><span>新对话会保存在本机</span></div>}
 				</div>
-				<div className="ai-local-note"><span className={`status-dot ${modelState}`} /><div><strong>{modelLabel}</strong><small>Agent 会话与对话历史保存在当前设备</small></div></div>
 			</aside>
 
 			<div className="ai-conversation-panel">
-				<header className="ai-conversation-header">
-					<div className="ai-assistant-avatar"><Bot size={20} /></div>
-					<div><strong>{activeConversation?.title || 'AI 研究助手'}</strong><span className={modelSwitchState === 'error' ? 'error' : modelState}>{modelSwitchMessage || modelLabel}</span></div>
-				</header>
-
-				<div className={`ai-message-stage ${activeConversation?.messages.length ? 'has-messages' : ''}`}>
+				<div ref={messageStageRef} className={`ai-message-stage ${activeConversation?.messages.length ? 'has-messages' : ''}`} role="region" aria-label="对话内容" tabIndex={0}>
 					{!activeConversation?.messages.length ? (
 						<div className="ai-welcome">
 							<div className="ai-welcome-mark"><Bot size={28} /></div>
@@ -513,7 +497,6 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 								</article>
 								);
 							})}
-							<div ref={messageEndRef} />
 						</div>
 					)}
 				</div>
@@ -551,6 +534,7 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 						<button type="button" className={`ai-chat-model-refresh ${modelListState}`} onClick={() => void refreshModels()} disabled={!config || !llmConfig || sending || modelSwitchState === 'switching' || modelListState === 'loading'} title={modelListState === 'error' ? `模型列表获取失败：${modelListMessage}` : '刷新模型列表'}>{modelListState === 'loading' ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}</button>
 						<button type="button" className="ai-chat-settings-button" onClick={onOpenSettings}><Settings size={15} />Agent 设置</button>
 					</div>
+					{modelSwitchMessage && <p className={`ai-model-switch-notice ${modelSwitchState}`} role="status">{modelSwitchMessage}</p>}
 					{modelState !== 'ready' && <button type="button" className="ai-configure-hint" onClick={onOpenSettings}><Settings size={14} />{modelState === 'error' ? 'Agent 运行时不可用，查看系统设置' : '尚未配置 Agent 模型，打开系统设置'}</button>}
 				</form>
 			</div>

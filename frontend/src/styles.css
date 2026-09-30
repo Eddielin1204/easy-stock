@@ -706,13 +706,55 @@ a:focus-visible {
 	.token-usage-stat > strong { font-size: 21px; }
 }
 
+.workspace-topbar { display: contents; }
+
+.workspace-topbar.collapsible {
+	display: grid;
+	width: 100%;
+	max-width: 1840px;
+	margin: 0 auto 10px;
+}
+
+.workspace-topbar.collapsible .topbar {
+	width: 100%;
+	margin: 10px 0 0;
+}
+
+.topbar[hidden] { display: none; }
+
+.topbar-toggle {
+	display: grid;
+	place-items: center;
+	justify-self: center;
+	width: 48px;
+	height: 20px;
+	padding: 0;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--surface);
+	color: var(--muted);
+	cursor: pointer;
+}
+
+.topbar-toggle:hover {
+	border-color: var(--theme-blue-line, #395879);
+	background: var(--surface-2);
+	color: var(--blue);
+}
+
+.workspace-topbar.expanded .topbar-toggle svg { transform: rotate(180deg); }
+
 .topbar {
 	display: grid;
-	grid-template-columns: minmax(260px, 1fr) auto minmax(280px, 1fr);
+	grid-template-columns: minmax(260px, 1fr) auto;
 	align-items: center;
 	gap: 22px;
 	max-width: 1840px;
 	margin: 0 auto 14px;
+}
+
+.topbar-with-modes {
+	grid-template-columns: minmax(260px, 1fr) auto minmax(280px, 1fr);
 }
 
 .brand-block,
@@ -5057,10 +5099,29 @@ a:focus-visible {
 }
 
 /* Codex-inspired AI conversation workspace. */
+.workspace-frame.workspace-ai {
+	height: 100dvh;
+	min-height: 0;
+	overflow: hidden;
+}
+
+.workspace-ai > .app-shell {
+	display: grid;
+	grid-template-rows: minmax(0, 1fr) auto;
+	min-height: 0;
+	overflow: hidden;
+}
+
+.workspace-ai > .app-sidebar { height: 100%; }
+.workspace-ai .topbar,
+.workspace-ai .data-footer { width: 100%; }
+
 .ai-chat-workspace {
 	display: grid;
 	grid-template-columns: 250px minmax(0, 1fr);
-	min-height: calc(100vh - 150px);
+	grid-template-rows: minmax(0, 1fr);
+	min-height: 0;
+	width: 100%;
 	max-width: 1840px;
 	margin: 0 auto;
 	border: 1px solid var(--line);
@@ -5072,8 +5133,10 @@ a:focus-visible {
 
 .ai-thread-rail {
 	display: grid;
-	grid-template-rows: auto minmax(0, 1fr) auto;
+	grid-template-rows: auto minmax(0, 1fr);
 	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
 	border-right: 1px solid var(--line);
 	background: var(--theme-surface-soft, #f7f9fc);
 }
@@ -5108,7 +5171,10 @@ a:focus-visible {
 	align-content: start;
 	gap: 4px;
 	padding: 9px;
+	min-height: 0;
 	overflow-y: auto;
+	overscroll-behavior: contain;
+	scrollbar-gutter: stable;
 }
 
 .ai-thread-list > button {
@@ -5155,58 +5221,17 @@ a:focus-visible {
 	font-size: 11px;
 }
 
-.ai-local-note {
-	display: grid;
-	grid-template-columns: 10px minmax(0, 1fr);
-	align-items: start;
-	gap: 8px;
-	margin: 9px;
-	padding: 10px;
-	border: 1px solid var(--line-soft);
-	border-radius: 8px;
-	background: var(--theme-surface, #ffffff);
-}
-.ai-local-note .status-dot { margin-top: 4px; }
-.ai-local-note .status-dot.ready { background: var(--theme-green-solid, #1a9a6d); box-shadow: 0 0 0 3px var(--theme-shadow, rgba(26, 154, 109, 0.12)); }
-.ai-local-note .status-dot.missing,
-.ai-local-note .status-dot.error { background: var(--theme-amber-solid, #d08a20); box-shadow: 0 0 0 3px var(--theme-shadow, rgba(208, 138, 32, 0.12)); }
-.ai-local-note > div { display: grid; min-width: 0; gap: 3px; }
-.ai-local-note strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.ai-local-note small { color: var(--subtle); font-size: 11px; line-height: 1.4; }
-
 .ai-conversation-panel {
 	display: grid;
-	grid-template-rows: auto minmax(0, 1fr) auto;
+	grid-template-rows: minmax(0, 1fr) auto;
 	min-width: 0;
 	min-height: 0;
 	background: var(--theme-surface, #ffffff);
 }
 
-.ai-conversation-header {
-	display: grid;
-	grid-template-columns: 38px minmax(0, 1fr);
-	align-items: center;
-	gap: 10px;
-	min-height: 68px;
-	padding: 12px 18px;
-	border-bottom: 1px solid var(--line-soft);
-}
-.ai-assistant-avatar {
-	display: grid;
-	place-items: center;
-	width: 38px;
-	height: 38px;
-	border: 1px solid var(--theme-blue-line, #bfd5ec);
-	border-radius: 10px;
-	background: linear-gradient(145deg, var(--theme-surface-soft, #f6fbff), var(--theme-blue-soft, #e7f2fd));
-	color: var(--blue);
-}
-.ai-conversation-header > div:nth-child(2) { display: grid; min-width: 0; gap: 3px; }
-.ai-conversation-header strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.ai-conversation-header span { color: var(--subtle); font-size: 12px; }
-.ai-conversation-header span.ready { color: var(--theme-green, #167653); }
-.ai-conversation-header span.missing,
-.ai-conversation-header span.error { color: var(--theme-amber, #b9770e); }
+.ai-model-switch-notice { width: min(900px, 100%); margin: 0; color: var(--subtle); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.ai-model-switch-notice.saved { color: var(--theme-green, #167653); }
+.ai-model-switch-notice.error { color: var(--theme-amber, #b9770e); }
 .ai-conversation-tools {
 	display: flex;
 	align-items: center;
@@ -5338,6 +5363,8 @@ a:focus-visible {
 .ai-message-stage {
 	min-height: 0;
 	overflow-y: auto;
+	overscroll-behavior: contain;
+	scrollbar-gutter: stable;
 }
 .ai-message-stage:not(.has-messages) { display: grid; place-items: center; }
 
@@ -5583,13 +5610,15 @@ a:focus-visible {
 }
 
 @media (max-width: 760px) {
-	.ai-chat-workspace { grid-template-columns: 1fr; min-height: calc(100vh - 118px); }
+	.workspace-ai .topbar { grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+	.workspace-ai .brand-block p,
+	.workspace-ai .mode-nav,
+	.workspace-ai .data-status { display: none; }
+	.ai-chat-workspace { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
 	.ai-thread-rail { grid-template-rows: auto auto; border-right: 0; border-bottom: 1px solid var(--line); }
 	.ai-thread-list { display: flex; overflow-x: auto; }
 	.ai-thread-list > button { flex: 0 0 190px; }
-	.ai-thread-empty,
-	.ai-local-note { display: none; }
-	.ai-conversation-header { padding-inline: 12px; }
+	.ai-thread-empty { display: none; }
 	.ai-conversation-tools { flex-wrap: wrap; gap: 5px; }
 	.ai-chat-model-picker,
 	.ai-chat-model-picker:has(.ai-chat-profile-select) { grid-template-columns: minmax(88px, .8fr) minmax(96px, 1fr) auto; flex-basis: 300px; padding-left: 7px; }
