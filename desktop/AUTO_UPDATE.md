@@ -20,13 +20,15 @@ Without signing credentials, CI can still produce packages for smoke testing, bu
 
 ## Release procedure
 
-Every release must be made by pushing a tag matching `desktop/package.json`, or by manually running the `Desktop Release` workflow with an existing tag. The workflow performs the following steps in order:
+Every release must be made by pushing a tag matching `desktop/package.json`, or by manually running the `Desktop Release` workflow with an existing tag. After all builds pass, GitHub publishing and OSS publishing run as independent jobs so a slow OSS connection cannot block user downloads. A release is fully verified only when both jobs succeed.
+
+The workflow performs these checks:
 
 1. Build and verify macOS arm64, macOS x64 and Windows x64 assets.
 2. Merge and verify updater metadata.
-3. Upload versioned ZIP/EXE updater assets to OSS with immutable caching.
-4. Upload `latest-mac.yml` and `latest.yml` last with `no-cache`, then probe every public URL.
-5. Publish only the user-facing DMGs and Windows installer plus `SHA256SUMS.txt` to GitHub Release.
+3. Upload versioned ZIP/EXE updater assets to OSS with immutable caching, bounded multipart transfers and resumable retries; verify their public sizes before changing the update channels.
+4. Upload `latest-mac.yml` and `latest.yml` last with `no-cache`, then compare their public contents with the local metadata.
+5. Upload only the user-facing DMGs and Windows installer plus `SHA256SUMS.txt` to a GitHub Release draft; verify every asset's size and GitHub SHA-256 digest before publishing it as the latest release.
 
 Do not manually delete updater files from OSS. The two `latest*.yml` objects are the update channels, and all files they reference must remain available. To validate an existing local asset directory:
 

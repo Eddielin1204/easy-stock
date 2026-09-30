@@ -198,6 +198,7 @@ jobs:
       - macos
       - windows
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -219,9 +220,46 @@ jobs:
       - name: Prepare GitHub and OSS asset sets
         run: node desktop/scripts/prepare-publish-assets.mjs release-assets publish-assets "$RELEASE_TAG"
 
+      - name: Generate SHA-256 checksums for user downloads
+        working-directory: publish-assets/github
+        run: find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+
+      - name: Publish or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: bash desktop/scripts/publish-github-release.sh "$RELEASE_TAG" publish-assets/github ".github/release-notes/$RELEASE_TAG.md"
+
+  updater:
+    name: Publish OSS automatic updates
+    needs:
+      - quality
+      - macos
+      - windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: easy-stock-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Merge and verify updater assets
+        run: |
+          node desktop/scripts/merge-mac-updater-metadata.mjs release-assets
+          node desktop/scripts/verify-updater-artifacts.mjs release-assets latest-mac.yml latest.yml
+          node desktop/scripts/prepare-publish-assets.mjs release-assets publish-assets "$RELEASE_TAG"
+
       - name: Install ossutil
         run: |
-          curl --fail --silent --show-error --location https://gosspublic.alicdn.com/ossutil/v2/2.3.0/ossutil-2.3.0-linux-amd64.zip --output "$RUNNER_TEMP/ossutil.zip"
+          curl --fail --silent --show-error --location --connect-timeout 20 --max-time 180 --retry 3 https://gosspublic.alicdn.com/ossutil/v2/2.3.0/ossutil-2.3.0-linux-amd64.zip --output "$RUNNER_TEMP/ossutil.zip"
           unzip -q "$RUNNER_TEMP/ossutil.zip" -d "$RUNNER_TEMP/ossutil"
           chmod +x "$RUNNER_TEMP/ossutil/ossutil-2.3.0-linux-amd64/ossutil"
           echo "OSSUTIL_BIN=$RUNNER_TEMP/ossutil/ossutil-2.3.0-linux-amd64/ossutil" >> "$GITHUB_ENV"
@@ -239,13 +277,3 @@ jobs:
           test -n "$OSS_ACCESS_KEY_ID" || { echo "Missing GitHub secret: OSS_ACCESS_KEY_ID" >&2; exit 1; }
           test -n "$OSS_ACCESS_KEY_SECRET" || { echo "Missing GitHub secret: OSS_ACCESS_KEY_SECRET" >&2; exit 1; }
           bash desktop/scripts/publish-updater-oss.sh publish-assets/updater
-
-      - name: Generate SHA-256 checksums for user downloads
-        working-directory: publish-assets/github
-        run: find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
-
-      - name: Publish or update release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          bash desktop/scripts/publish-github-release.sh "$RELEASE_TAG" publish-assets/github ".github/release-notes/$RELEASE_TAG.md"
