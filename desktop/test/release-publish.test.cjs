@@ -67,6 +67,7 @@ test('OSS retries failed uploads and never advances manifests before public asse
     fs.writeFileSync(path.join(assets, metadata), `version: 1.3.0\nfiles:\n  - url: ${name}\n    sha512: ${crypto.createHash('sha512').update(bytes).digest('base64')}\n`);
   }
   fs.writeFileSync(path.join(bin, 'ossutil'), `#!/usr/bin/env bash
+if [[ "$1" == hash ]]; then echo "42  $3"; exit 0; fi
 while [[ "$1" != cp ]]; do shift; done
 name=$(basename "$2")
 echo "upload:$name" >> "$CHECK_ROOT/log"
@@ -88,6 +89,7 @@ if [[ "$head" == 1 ]]; then
   size=$(wc -c < "$CHECK_ROOT/assets/$name" | tr -d ' ')
   [[ "\${CORRUPT_SIZE:-0}" == 1 ]] && size=0
   printf 'HTTP/1.1 200 OK\\r\\nContent-Length: %s\\r\\n\\r\\n' "$size" > "$headers"
+  if [[ "\${MATCH_PUBLIC_CRC:-0}" == 1 ]]; then printf 'x-oss-hash-crc64ecma: 42\\r\\n' >> "$headers"; fi
 else cp "$CHECK_ROOT/assets/$name" "$output"; fi
 `, { mode: 0o755 });
   const publish = (extra = {}) => spawnSync('bash', [path.resolve(__dirname, '../scripts/publish-updater-oss.sh'), assets], {
@@ -102,4 +104,10 @@ else cp "$CHECK_ROOT/assets/$name" "$output"; fi
   const failure = publish({ CORRUPT_SIZE: '1' });
   assert.notEqual(failure.status, 0);
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'log'), 'utf8'), /upload:latest/);
+  fs.writeFileSync(path.join(root, 'log'), '');
+  const resume = publish({ MATCH_PUBLIC_CRC: '1' });
+  assert.equal(resume.status, 0, resume.stderr);
+  const resumedLog = fs.readFileSync(path.join(root, 'log'), 'utf8');
+  assert.doesNotMatch(resumedLog, /upload:(mac\.zip|win\.exe)/);
+  assert.match(resumedLog, /upload:latest-mac\.yml/);
 });

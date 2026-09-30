@@ -30,13 +30,31 @@ if command -v timeout >/dev/null 2>&1; then
   upload_timeout=(timeout --kill-after=15s "${OSS_UPLOAD_TIMEOUT_SECONDS:-600}s")
 fi
 
+matches_public_file() {
+  local file=$1 name headers local_size remote_size remote_crc local_crc
+  name=$(basename "$file")
+  headers="$verification_root/existing-headers"
+  if ! curl --fail --silent --location --head --connect-timeout 10 --max-time 20 \
+    "${public_url%/}/$name" --dump-header "$headers" --output /dev/null; then return 1; fi
+  local_size=$(wc -c < "$file" | tr -d ' ')
+  remote_size=$(awk 'tolower($1) == "content-length:" { gsub("\r", "", $2); size=$2 } END { print size }' "$headers")
+  remote_crc=$(awk 'tolower($1) == "x-oss-hash-crc64ecma:" { gsub("\r", "", $2); crc=$2 } END { print crc }' "$headers")
+  [[ "$remote_size" == "$local_size" && -n "$remote_crc" ]] || return 1
+  local_crc=$("$ossutil_command" hash crc64 "$file" | awk 'NR == 1 { print $1 }') || return 1
+  [[ "$local_crc" == "$remote_crc" ]]
+}
+
 upload() {
   local file=$1 cache_control=$2 name attempt
   name=$(basename "$file")
+  if [[ "$cache_control" == 'public,max-age=31536000,immutable' ]] && matches_public_file "$file"; then
+    echo "Already published with matching size and OSS CRC64: $name"
+    return 0
+  fi
   for attempt in 1 2 3; do
     echo "Uploading $name (attempt $attempt/3)"
     if "${upload_timeout[@]}" "$ossutil_command" "${ossutil_options[@]}" cp "$file" "${target_uri%/}/$name" \
-      --force --checksum --no-progress --parallel "${OSS_UPLOAD_PARALLEL:-16}" --part-size 4Mi --checkpoint-dir "$verification_root/checkpoints" --cache-control "$cache_control"; then
+      --force --no-progress --parallel "${OSS_UPLOAD_PARALLEL:-16}" --part-size 4Mi --checkpoint-dir "$verification_root/checkpoints" --cache-control "$cache_control"; then
       return 0
     fi
   done
