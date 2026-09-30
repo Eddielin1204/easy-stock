@@ -6,6 +6,19 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const test = require('node:test');
 
+test('release recovery rejects builds for a different tag, failed platforms and expired artifacts', async () => {
+  const { verifyReleaseBuild } = await import('../scripts/verify-release-build.mjs');
+  const run = { head_sha: 'release-commit', path: '.github/workflows/release.yml' };
+  const jobs = ['Test release source', 'macOS arm64', 'macOS x64', 'Windows x64'].map((name) => ({ name, conclusion: 'success' }));
+  const artifacts = ['easy-stock-macos-arm64', 'easy-stock-macos-x64', 'easy-stock-windows-x64'].map((name) => ({ name, size_in_bytes: 10, digest: `sha256:${'a'.repeat(64)}`, expired: false }));
+  assert.doesNotThrow(() => verifyReleaseBuild('release-commit', run, jobs, artifacts));
+  assert.throws(() => verifyReleaseBuild('different-commit', run, jobs, artifacts));
+  assert.throws(() => verifyReleaseBuild('release-commit', { ...run, path: 'unrelated.yml' }, jobs, artifacts));
+  assert.throws(() => verifyReleaseBuild('release-commit', run, jobs.slice(1), artifacts));
+  assert.throws(() => verifyReleaseBuild('release-commit', run, jobs.map((job) => ({ ...job, conclusion: 'failure' })), artifacts));
+  assert.throws(() => verifyReleaseBuild('release-commit', run, jobs, artifacts.map((item) => ({ ...item, expired: true }))));
+});
+
 test('DMG capacity grows with bundled runtime files', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-dmg-size-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

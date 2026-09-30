@@ -30,6 +30,8 @@ The workflow performs these checks:
 4. Upload `latest-mac.yml` and `latest.yml` last with `no-cache`, then compare their public contents with the local metadata.
 5. Upload only the user-facing DMGs and Windows installer plus `SHA256SUMS.txt` to a GitHub Release draft; verify every asset's size and GitHub SHA-256 digest before publishing it as the latest release.
 
+If only publishing fails, dispatch the workflow from `main` with the same tag and the original `build_run_id`. Source tests run again, while packaging reuses the original artifacts only after verifying their tag commit, workflow, successful platform checks and unexpired SHA-256 digests. Publishing scripts come from the dispatched workflow revision so upload repairs do not require changing an already published tag. OSS multipart concurrency defaults to 16 and can be adjusted with `OSS_UPLOAD_PARALLEL`.
+
 Do not manually delete updater files from OSS. The two `latest*.yml` objects are the update channels, and all files they reference must remain available. To validate an existing local asset directory:
 
 ```bash

@@ -36,7 +36,7 @@ upload() {
   for attempt in 1 2 3; do
     echo "Uploading $name (attempt $attempt/3)"
     if "${upload_timeout[@]}" "$ossutil_command" "${ossutil_options[@]}" cp "$file" "${target_uri%/}/$name" \
-      --force --no-progress --parallel 2 --part-size 4Mi --checkpoint-dir "$verification_root/checkpoints" --cache-control "$cache_control"; then
+      --force --checksum --no-progress --parallel "${OSS_UPLOAD_PARALLEL:-16}" --part-size 4Mi --checkpoint-dir "$verification_root/checkpoints" --cache-control "$cache_control"; then
       return 0
     fi
   done
