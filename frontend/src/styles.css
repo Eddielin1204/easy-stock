@@ -746,11 +746,15 @@ a:focus-visible {
 
 .topbar {
 	display: grid;
-	grid-template-columns: minmax(260px, 1fr) auto minmax(280px, 1fr);
+	grid-template-columns: minmax(260px, 1fr) auto;
 	align-items: center;
 	gap: 22px;
 	max-width: 1840px;
 	margin: 0 auto 14px;
+}
+
+.topbar-with-modes {
+	grid-template-columns: minmax(260px, 1fr) auto minmax(280px, 1fr);
 }
 
 .brand-block,

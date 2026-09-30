@@ -100,7 +100,7 @@ export function App() {
 		return 'themes';
 	});
 	const [sidebarExpanded, setSidebarExpanded] = useState(true);
-	const [aiTopbarExpanded, setAITopbarExpanded] = useState(false);
+	const [topbarExpanded, setTopbarExpanded] = useState(true);
 	const [config, setConfig] = useState<BackendConfig | null>(null);
 	const [themeStrengthWindow, setThemeStrengthWindow] = useState<ThemeStrengthWindow>('daily');
 	const [activeTheme, setActiveTheme] = useState('');
@@ -321,7 +321,7 @@ export function App() {
 	};
 
 	const switchWorkspace = (mode: WorkspaceMode) => {
-		if (mode === 'ai' && workspaceMode !== 'ai') setAITopbarExpanded(false);
+		if (mode !== workspaceMode) setTopbarExpanded(true);
 		setWorkspaceMode(mode);
 		window.history.replaceState(null, '', mode === 'limit-up' ? '#limit-up' : mode === 'mastery' ? '#mastery' : mode === 'reviews' ? '#reviews' : mode === 'stock-ai' ? '#stock-ai' : mode === 'portfolio-inspection' ? '#portfolio-inspection' : mode === 'ai' ? '#ai' : mode === 'market' ? '#market/pulse' : mode === 'token-usage' ? '#token-usage' : '#themes');
 	};
@@ -387,7 +387,7 @@ export function App() {
 		? limitUpData ? `${limitUpData.current.trade_date} · ${limitUpData.session_status} · ${limitUpData.meta.source.includes('duanxianxia') ? '开盘啦涨停池' : '东方财富兜底'} · ${limitUpData.concept_status === 'ready' ? '题材已归因' : limitUpState === 'loading' ? '题材补充中' : '题材暂不完整'}` : '开盘啦涨停池优先'
 		: workspaceMode === 'mastery' ? 'GitHub 原始资料 · 每日缓存 · Hermes 本地知识库' : workspaceMode === 'reviews' ? '雪球 · 淘股吧 · 微信公众号' : workspaceMode === 'stock-ai' ? '多周期评分 · 基准超额 · 隔日情景 · 动态风控' : workspaceMode === 'portfolio-inspection' ? '逐股分析 · 组合风险 · 后台任务' : workspaceMode === 'ai' ? '本机 Hermes AI 对话' : workspaceMode === 'market' ? '全球指数 · 行业资金 · 龙虎榜 · 公告研报' : workspaceMode === 'token-usage' ? '模型输入、输出与功能模块消耗' : themeSourceStatus + ' · ' + streamStatus;
 	const topbarTitle = workspaceMode === 'themes' ? '趋势题材雷达' : workspaceMode === 'limit-up' ? '短线连板雷达' : workspaceMode === 'mastery' ? '游资心法库' : workspaceMode === 'reviews' ? '大V复盘日记' : workspaceMode === 'stock-ai' ? '个股 AI 分析' : workspaceMode === 'portfolio-inspection' ? '持仓 AI 巡检' : workspaceMode === 'market' ? '行情总览' : workspaceMode === 'token-usage' ? 'Token 统计' : 'AI 对话';
-	const topbarDescription = workspaceMode === 'themes' ? '炒作主线、趋势强度、个股梯队与日 K 联动工作台' : workspaceMode === 'limit-up' ? '连板高度、炒作概念与晋级结构工作台' : workspaceMode === 'mastery' ? '阅读不同游资的交易经验，并由 Hermes 按原文辅助研读' : workspaceMode === 'reviews' ? '多平台复盘内容、作者观点与原文归档工作台' : workspaceMode === 'stock-ai' ? '多周期评分、隔日情景推演与账户级风控执行工作台' : workspaceMode === 'portfolio-inspection' ? '逐股研判、集中度识别与组合风险巡检工作台' : workspaceMode === 'market' ? '从盘面快讯到资金与研究信号的统一行情工作台' : workspaceMode === 'token-usage' ? '按日、按月和功能模块查看模型 Token 消耗' : '像 Codex 一样持续协作、拆解问题并形成可执行结果';
+	const topbarDescription = workspaceMode === 'themes' ? '炒作主线、趋势强度、个股梯队与日 K 联动工作台' : workspaceMode === 'limit-up' ? '连板高度、炒作概念与晋级结构工作台' : workspaceMode === 'mastery' ? '阅读不同游资的交易经验，并由 Hermes 按原文辅助研读' : workspaceMode === 'reviews' ? '多平台复盘内容、作者观点与原文归档工作台' : workspaceMode === 'stock-ai' ? '多周期评分、隔日情景推演与账户级风控执行工作台' : workspaceMode === 'portfolio-inspection' ? '逐股研判、集中度识别与组合风险巡检工作台' : workspaceMode === 'market' ? '从盘面快讯到资金与研究信号的统一行情工作台' : workspaceMode === 'token-usage' ? '按日、按月和功能模块查看模型 Token 消耗' : '';
 
 	return (
 		<main className={`workspace-frame ${sidebarExpanded ? 'sidebar-expanded' : 'sidebar-collapsed'}`}>
@@ -410,36 +410,29 @@ export function App() {
 				</div>
 			</aside>
 			<div className="app-shell">
-			<div className={`workspace-topbar ${workspaceMode === 'ai' ? `collapsible ${aiTopbarExpanded ? 'expanded' : ''}` : ''}`}>
-				{workspaceMode === 'ai' && <button
+			<div className={`workspace-topbar ${workspaceMode !== 'stock-ai' ? `collapsible ${topbarExpanded ? 'expanded' : ''}` : ''}`}>
+				{workspaceMode !== 'stock-ai' && <button
 					type="button"
 					className="topbar-toggle"
-					onClick={() => setAITopbarExpanded((value) => !value)}
-					aria-expanded={aiTopbarExpanded}
+					onClick={() => setTopbarExpanded((value) => !value)}
+					aria-expanded={topbarExpanded}
 					aria-controls="workspace-topbar-content"
-					aria-label={aiTopbarExpanded ? '收起顶部栏' : '展开顶部栏'}
-					title={aiTopbarExpanded ? '收起顶部栏' : '展开顶部栏'}
+					aria-label={topbarExpanded ? '收起顶部栏' : '展开顶部栏'}
+					title={topbarExpanded ? '收起顶部栏' : '展开顶部栏'}
 				><ChevronDown size={16} aria-hidden="true" /></button>}
-			<header id="workspace-topbar-content" className="topbar" hidden={workspaceMode === 'ai' && !aiTopbarExpanded}>
+			<header id="workspace-topbar-content" className={workspaceMode === 'stock-ai' ? 'topbar topbar-with-modes' : 'topbar'} hidden={workspaceMode !== 'stock-ai' && !topbarExpanded}>
 				<div className="brand-block">
 					<div className="brand-mark"><img src={`${import.meta.env.BASE_URL}easy-stock-mark.svg`} alt="easy-stock" /></div>
 					<div>
 						<h1>{topbarTitle}</h1>
-						<p>{topbarDescription}</p>
+						{topbarDescription && <p>{topbarDescription}</p>}
 					</div>
 				</div>
-				<nav className="mode-nav" aria-label="工作台模式">
-					{workspaceMode === 'token-usage' ? <button type="button" className="active"><BarChart3 size={16} aria-hidden="true" />Token统计</button> : null}
-					{workspaceMode === 'token-usage' ? null : workspaceMode === 'stock-ai' ? <>
-						<button type="button" className={stockAIWorkspaceMode === 'analysis' ? 'active' : ''} onClick={() => setStockAIWorkspaceMode('analysis')}><BrainCircuit size={16} aria-hidden="true" />个股分析</button>
-						<button type="button" className={stockAIWorkspaceMode === 'expectation' ? 'active' : ''} onClick={() => setStockAIWorkspaceMode('expectation')}><Target size={16} aria-hidden="true" />隔日预期</button>
-						<button type="button" className={stockAIWorkspaceMode === 'risk' ? 'active' : ''} onClick={() => setStockAIWorkspaceMode('risk')}><ShieldCheck size={16} aria-hidden="true" />风控执行</button>
-					</> : <>
-						<button type="button" className="active">{workspaceMode === 'mastery' ? <BookMarked size={16} aria-hidden="true" /> : workspaceMode === 'reviews' ? <BookOpen size={16} aria-hidden="true" /> : workspaceMode === 'portfolio-inspection' ? <WalletCards size={16} aria-hidden="true" /> : workspaceMode === 'ai' ? <Bot size={16} aria-hidden="true" /> : workspaceMode === 'market' ? <BarChart3 size={16} aria-hidden="true" /> : <Flame size={16} aria-hidden="true" />}{workspaceMode === 'themes' ? '趋势题材' : workspaceMode === 'limit-up' ? '短线连板' : workspaceMode === 'mastery' ? '游资心法' : workspaceMode === 'reviews' ? '复盘日记' : workspaceMode === 'portfolio-inspection' ? '持仓巡检' : workspaceMode === 'market' ? '行情总览' : 'AI 对话'}</button>
-						<button type="button" disabled><Target size={16} aria-hidden="true" />隔日预期</button>
-						<button type="button" disabled><ShieldCheck size={16} aria-hidden="true" />风控执行</button>
-					</>}
-				</nav>
+				{workspaceMode === 'stock-ai' && <nav className="mode-nav" aria-label="工作台模式">
+					<button type="button" className={stockAIWorkspaceMode === 'analysis' ? 'active' : ''} onClick={() => setStockAIWorkspaceMode('analysis')}><BrainCircuit size={16} aria-hidden="true" />个股分析</button>
+					<button type="button" className={stockAIWorkspaceMode === 'expectation' ? 'active' : ''} onClick={() => setStockAIWorkspaceMode('expectation')}><Target size={16} aria-hidden="true" />隔日预期</button>
+					<button type="button" className={stockAIWorkspaceMode === 'risk' ? 'active' : ''} onClick={() => setStockAIWorkspaceMode('risk')}><ShieldCheck size={16} aria-hidden="true" />风控执行</button>
+				</nav>}
 				<div className="top-actions">
 					<div className={`data-status ${currentLoadState}`}>
 						<span className="status-dot" />
