@@ -1,4 +1,8 @@
 """Integration tests against bundled Hermes transports; no network or SDK patches."""
+import json
+import os
+import subprocess
+import sys
 import unittest
 import reasoning_launcher as bridge
 from providers import get_provider_profile, register_provider
@@ -26,6 +30,21 @@ class NativeReasoningTests(unittest.TestCase):
         params.update(overrides)
         transport = ResponsesApiTransport() if self.config['api_mode'] == 'codex_responses' else ChatCompletionsTransport()
         return transport.build_kwargs(self.config['model'], [{'role':'user','content':'hi'}], **params)
+
+    def test_describe_pipes_keep_utf8_chinese_labels(self):
+        # Windows pipes decode stdin with the ANSI code page (GBK) unless the
+        # launcher reconfigures stdio; the Go host always writes UTF-8.
+        request = {"config": {"model": "m", "base_url": "https://x.example/v1", "api_mode": "chat_completions"},
+                   "models": [{"model": "m", "supplement": {"options": [{"value": "low", "label": "低"}, {"value": "max", "label": "最大"}],
+                                                            "default": "max", "source": "official", "wire": "openai_chat"}}]}
+        env = {k: v for k, v in os.environ.items() if k not in ("PYTHONUTF8", "PYTHONIOENCODING")}
+        script = "import sys; sys.argv = ['reasoning_launcher', 'describe']; import reasoning_launcher; reasoning_launcher.main()"
+        run = subprocess.run([sys.executable, "-c", script], input=json.dumps(request).encode("utf-8"),
+                             capture_output=True, env=env,
+                             cwd=os.path.dirname(os.path.abspath(bridge.__file__)))
+        self.assertEqual(run.returncode, 0, run.stderr.decode("utf-8", "replace"))
+        labels = {o["value"]: o["label"] for o in json.loads(run.stdout.decode("utf-8"))["m"]["options"]}
+        self.assertEqual(labels, {"low": "低", "max": "最大"})
 
     def test_deepseek_alias_native_translation(self):
         self.assertEqual(self.configure('deepseek-chat', 'https://api.deepseek.com/v1'), ['none','low','medium','high','max'])

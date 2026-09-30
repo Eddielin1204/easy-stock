@@ -1295,6 +1295,15 @@ func hermesEnvironment(base []string, home, workDir, binDir string) []string {
 	values = setEnv(values, "PYTHONNOUSERSITE", "1")
 	values = setEnv(values, "PYTHONUNBUFFERED", "1")
 	values = setEnv(values, "NO_COLOR", "1")
+	// Python stdio and pipes follow the ANSI code page on Windows (GBK on
+	// zh-CN) while this app speaks UTF-8. Same defaults hermes_bootstrap sets
+	// for its own children; an explicit user setting still wins.
+	if environmentValue(base, "PYTHONUTF8") == "" {
+		values = setEnv(values, "PYTHONUTF8", "1")
+	}
+	if environmentValue(base, "PYTHONIOENCODING") == "" {
+		values = setEnv(values, "PYTHONIOENCODING", "utf-8")
+	}
 	if strings.TrimSpace(home) != "" {
 		values = setEnv(values, "AGENT_BROWSER_PROFILE", filepath.Join(home, "browser-profile"))
 	}

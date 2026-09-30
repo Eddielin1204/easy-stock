@@ -297,6 +297,23 @@ func TestHermesEnvironmentIncludesWorkspaceNodeBin(t *testing.T) {
 	}
 }
 
+func TestHermesEnvironmentDefaultsPythonToUTF8(t *testing.T) {
+	values := hermesEnvironment([]string{"PATH=/usr/bin"}, t.TempDir(), "", "")
+	if got := envValue(values, "PYTHONUTF8"); got != "1" {
+		t.Fatalf("PYTHONUTF8 = %q, want 1", got)
+	}
+	if got := envValue(values, "PYTHONIOENCODING"); got != "utf-8" {
+		t.Fatalf("PYTHONIOENCODING = %q, want utf-8", got)
+	}
+	values = hermesEnvironment([]string{"PATH=/usr/bin", "PYTHONUTF8=0", "PYTHONIOENCODING=gbk"}, t.TempDir(), "", "")
+	if got := envValue(values, "PYTHONUTF8"); got != "0" {
+		t.Fatalf("PYTHONUTF8 = %q, want user setting 0", got)
+	}
+	if got := envValue(values, "PYTHONIOENCODING"); got != "gbk" {
+		t.Fatalf("PYTHONIOENCODING = %q, want user setting gbk", got)
+	}
+}
+
 func TestRuntimePythonUsesStandaloneWindowsInterpreter(t *testing.T) {
 	root := filepath.Join("runtime", "hermes")
 	if got := runtimePythonForOS(root, "windows"); got != filepath.Join(root, "python", "python.exe") {

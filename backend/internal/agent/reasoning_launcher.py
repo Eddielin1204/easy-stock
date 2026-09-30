@@ -162,6 +162,14 @@ def install_profile(config, capability):
 
 
 def main():
+    # Windows pipes default stdio to the ANSI code page (GBK on zh-CN), but the
+    # Go host always writes UTF-8. Reconfigure before the first stdin read.
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8")
+            except (OSError, ValueError):
+                pass
     if len(sys.argv) > 1 and sys.argv[1] == "describe":
         request = json.load(sys.stdin)
         result = {}

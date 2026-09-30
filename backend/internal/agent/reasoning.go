@@ -252,7 +252,7 @@ type capabilityCacheEntry struct {
 	Models        map[string]ReasoningCapability `json:"models"`
 }
 
-const reasoningCapabilityVersion = 4
+const reasoningCapabilityVersion = 5
 
 type CapabilityGateway interface {
 	ResolveModelCapabilities(baseURL, apiMode string, models map[string]json.RawMessage) (map[string]ReasoningCapability, error)
