@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { dmgSizeMiB } from './dmg-size.mjs';
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const arch = process.env.A_STOCK_DESKTOP_ARCH || process.arch;
@@ -35,7 +36,9 @@ try {
 	// framework symlinks to absolute paths. Create a writable volume first and
 	// copy into the mounted filesystem with `ditto`, which preserves the
 	// relative links required by Electron frameworks.
-	run('hdiutil', ['create', '-size', '1200m', '-fs', 'Journaled HFS+', '-volname', 'easy-stock', '-ov', '-type', 'UDIF', writableImagePath]);
+	const imageSizeMiB = dmgSizeMiB(appPath);
+	console.log(`Creating ${imageSizeMiB} MiB writable image for the bundled application`);
+	run('hdiutil', ['create', '-size', `${imageSizeMiB}m`, '-fs', 'Journaled HFS+', '-volname', 'easy-stock', '-ov', '-type', 'UDIF', writableImagePath]);
 	run('hdiutil', ['attach', writableImagePath, '-nobrowse', '-mountpoint', writableMountPath]);
 	writableMounted = true;
 	const stagedAppPath = path.join(writableMountPath, 'easy-stock.app');

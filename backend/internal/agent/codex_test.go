@@ -428,3 +428,41 @@ func TestBuiltinMCPHandshake(t *testing.T) {
 		t.Fatalf("MCP handshake: %v %s", err, data)
 	}
 }
+
+func TestMCPStdioLauncherPreservesArgumentsAndPipes(t *testing.T) {
+	python := os.Getenv("EASY_STOCK_HERMES_TEST_PYTHON")
+	if python == "" {
+		var err error
+		python, err = exec.LookPath("python3")
+		if err != nil {
+			t.Skip("Python is unavailable")
+		}
+	}
+	for _, subprocessLaunch := range []bool{false, true} {
+		t.Run(fmt.Sprintf("subprocess=%v", subprocessLaunch), func(t *testing.T) {
+			argument := "A path with spaces\nand a second line"
+			child := "import json,os,sys\nprint(json.dumps({'arg':sys.argv[1], 'line':sys.stdin.readline().strip(), 'model_key':os.getenv('OPENAI_API_KEY'), 'tool_key':os.getenv('FIXTURE_SECRET')}),flush=True)\n"
+			spec, _ := json.Marshal(map[string]any{"transport": "stdio", "command": python, "args": []string{"-c", child, argument}, "env": map[string]string{"FIXTURE_SECRET": "fixture-only"}})
+			launcher := mcpLauncher
+			if subprocessLaunch {
+				launcher = strings.Replace(launcher, "if os.name == 'nt':", "if True:", 1)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, python, "-c", launcher, "EASY_STOCK_MCP_TEST")
+			cmd.Env = append(os.Environ(), "EASY_STOCK_MCP_TEST="+string(spec), "OPENAI_API_KEY=fixture-model-key")
+			cmd.Stdin = strings.NewReader("MCP input message\n")
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("stdio launcher failed: %v: %s", err, output)
+			}
+			var result map[string]any
+			if err := json.Unmarshal(output, &result); err != nil {
+				t.Fatalf("stdio output is not JSON: %v: %s", err, output)
+			}
+			if result["arg"] != argument || result["line"] != "MCP input message" || result["model_key"] != nil || result["tool_key"] != "fixture-only" {
+				t.Fatalf("stdio arguments, pipes or credential isolation failed: %v", result)
+			}
+		})
+	}
+}

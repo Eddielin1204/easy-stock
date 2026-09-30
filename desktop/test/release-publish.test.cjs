@@ -6,6 +6,21 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const test = require('node:test');
 
+test('DMG capacity grows with bundled runtime files', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-dmg-size-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const { dmgSizeMiB } = await import('../scripts/dmg-size.mjs');
+  assert.equal(dmgSizeMiB(root), 1200);
+  const file = fs.openSync(path.join(root, 'large-runtime'), 'w');
+  fs.ftruncateSync(file, 1500 * 1024 * 1024);
+  fs.closeSync(file);
+  assert.ok(dmgSizeMiB(root) > 1500 + 128);
+  if (process.platform !== 'win32') {
+    fs.symlinkSync(root, path.join(root, 'external-link'));
+    assert.ok(dmgSizeMiB(root) < 2000, 'symlinks must not duplicate target contents');
+  }
+});
+
 test('GitHub publication rejects incomplete or corrupted remote assets', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-publish-check-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

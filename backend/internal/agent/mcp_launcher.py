@@ -11,6 +11,12 @@ for key in list(os.environ):
 os.environ.update(spec.get('env', {}))
 
 if spec['transport'] == 'stdio':
+    if os.name == 'nt':
+        # Windows execvpe does not quote arguments like subprocess does. Keep
+        # multiline scripts and paths with spaces intact, and inherit the MCP
+        # pipes while the launcher waits for the child process to finish.
+        import subprocess
+        raise SystemExit(subprocess.run([spec['command'], *spec.get('args', [])], env=os.environ).returncode)
     os.execvpe(spec['command'], [spec['command'], *spec.get('args', [])], os.environ)
 
 import anyio
