@@ -3707,6 +3707,25 @@ a:focus-visible {
 .settings-message.saved { color: var(--theme-green, #167653); }
 .settings-message.error { color: var(--theme-red, #bc303a); }
 .settings-message span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-save-notice {
+	position: fixed;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	z-index: 1300;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 18px 28px;
+	border: 1px solid var(--theme-green-line, #b9ded0);
+	border-radius: 12px;
+	background: var(--theme-surface, #ffffff);
+	box-shadow: 0 12px 30px var(--theme-shadow, rgba(23, 46, 72, .16));
+	color: var(--theme-green, #167653);
+	font-size: 16px;
+	font-weight: 600;
+	pointer-events: none;
+}
 
 .app-update-status { display: grid; gap: 11px; padding: 13px; border: 1px solid var(--theme-line, #cfe0f2); border-radius: 10px; background: var(--theme-surface-soft, #f7faff); }
 .app-update-status.downloaded { border-color: var(--theme-green-line, #b9dfd0); background: var(--theme-surface-soft, #f1fbf7); }

@@ -442,11 +442,12 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 		try {
 			await persistSettings();
 			setState('saved');
-			setMessage('共享设置已保存');
+			setMessage('保存成功');
 			onSaved?.();
+			onClose();
 		} catch (error) {
 			setState('error');
-			setMessage(error instanceof Error ? error.message : '保存设置失败');
+			setMessage(error instanceof Error && error.message ? `保存失败：${error.message}` : '保存失败');
 		}
 	};
 
@@ -569,7 +570,7 @@ export function SettingsDrawer({ config, open, onClose, onSaved }: Props) {
 						</SettingsSection>
 
 						<footer className="settings-footer">
-							<div className={`settings-message ${state}`}>{state === 'saved' && <CheckCircle2 size={15} />}{state === 'error' && <KeyRound size={15} />}<span>{message || '留空的模型密钥会保留已保存的值。'}</span></div>
+							<div className={`settings-message ${state}`} role={state === 'error' ? 'alert' : 'status'}>{state === 'saved' && <CheckCircle2 size={15} />}{state === 'error' && <CircleAlert size={15} />}<span>{message || '留空的模型密钥会保留已保存的值。'}</span></div>
 							<button type="button" onClick={onClose}>取消</button>
 							<button type="submit" className="settings-save" disabled={!config || state === 'saving' || testState === 'testing'}>{state === 'saving' ? <LoaderCircle className="spin" size={16} /> : <Save size={16} />}保存设置</button>
 						</footer>
