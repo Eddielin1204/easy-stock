@@ -1,25 +1,26 @@
 import { CheckCircle2, CircleAlert, ExternalLink, LoaderCircle, Network, Plus, Puzzle, Save, Search, ShieldCheck, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { BackendConfig, HermesAgentSettings, HermesInstalledSkill, HermesMCPServerSetting, HermesSkillMarketEntry, HermesSkillMarketSource, HermesSkillSetting, SecretSettingStatus } from '../lib/backend';
+import type { BackendConfig, AgentSettings, AgentInstalledSkill, AgentMCPServerSetting, AgentSkillMarketEntry, AgentSkillMarketSource, AgentSkillSetting, SecretSettingStatus } from '../lib/backend';
 import { requestJSON } from '../lib/backend';
+import { SettingsSection } from './SettingsSection';
 
 type Props = { config: BackendConfig | null; open: boolean };
 type SecretEntryDraft = { id: string; key: string; value: string; configured: boolean; masked?: string; remove: boolean };
-type MCPDraft = Omit<HermesMCPServerSetting, 'env' | 'headers' | 'args'> & { id: string; originalName: string; argsText: string; env: SecretEntryDraft[]; headers: SecretEntryDraft[] };
+type MCPDraft = Omit<AgentMCPServerSetting, 'env' | 'headers' | 'args'> & { id: string; originalName: string; argsText: string; env: SecretEntryDraft[]; headers: SecretEntryDraft[] };
 
 
 let draftSequence = 0;
 const nextID = (prefix: string) => `${prefix}-${Date.now()}-${++draftSequence}`;
 
-export function HermesAgentSettingsPanel({ config, open }: Props) {
-	const [skills, setSkills] = useState<HermesSkillSetting[]>([]);
+export function AgentSettingsPanel({ config, open }: Props) {
+	const [skills, setSkills] = useState<AgentSkillSetting[]>([]);
 	const [servers, setServers] = useState<MCPDraft[]>([]);
 	const [search, setSearch] = useState('');
 	const [state, setState] = useState<'idle' | 'loading' | 'saving' | 'saved' | 'error'>('idle');
 	const [message, setMessage] = useState('');
 	const [gitURL, setGitURL] = useState('');
-	const [marketSkills, setMarketSkills] = useState<HermesSkillMarketEntry[]>([]);
-	const [marketSources, setMarketSources] = useState<HermesSkillMarketSource[]>([]);
+	const [marketSkills, setMarketSkills] = useState<AgentSkillMarketEntry[]>([]);
+	const [marketSources, setMarketSources] = useState<AgentSkillMarketSource[]>([]);
 	const [downloadProgress, setDownloadProgress] = useState<{ downloaded: number; total: number; bytesPerSecond: number; url: string } | null>(null);
 	const directoryInput = useRef<HTMLInputElement>(null);
 	const zipInput = useRef<HTMLInputElement>(null);
@@ -29,7 +30,7 @@ export function HermesAgentSettingsPanel({ config, open }: Props) {
 		let cancelled = false;
 		setState('loading');
 		setMessage('');
-		requestJSON<{ data: HermesAgentSettings }>(config, '/api/v1/settings/agent')
+		requestJSON<{ data: AgentSettings }>(config, '/api/v1/settings/agent')
 			.then(({ data }) => {
 				if (cancelled) return;
 				setSkills(data.skills || []);
@@ -41,10 +42,10 @@ export function HermesAgentSettingsPanel({ config, open }: Props) {
 				setState('error');
 				setMessage(error instanceof Error ? error.message : '读取 Skill/MCP 设置失败');
 			});
-		requestJSON<{ data: HermesSkillMarketEntry[] }>(config, '/api/v1/settings/agent/skills/market')
+		requestJSON<{ data: AgentSkillMarketEntry[] }>(config, '/api/v1/settings/agent/skills/market')
 			.then(({ data }) => { if (!cancelled) setMarketSkills(data || []); })
 			.catch(() => { if (!cancelled) setMarketSkills([]); });
-		requestJSON<{ data: HermesSkillMarketSource[] }>(config, '/api/v1/settings/agent/skills/market/sources')
+		requestJSON<{ data: AgentSkillMarketSource[] }>(config, '/api/v1/settings/agent/skills/market/sources')
 			.then(({ data }) => { if (!cancelled) setMarketSources(data || []); })
 			.catch(() => { if (!cancelled) setMarketSources([]); });
 		return () => { cancelled = true; };
@@ -80,9 +81,9 @@ export function HermesAgentSettingsPanel({ config, open }: Props) {
 				form.append('files', file, file.name);
 				form.append('paths', relativePath);
 			});
-			const payload = await requestJSON<{ data: HermesInstalledSkill[] }>(config, '/api/v1/settings/agent/skills/import', { method: 'POST', body: form });
+			const payload = await requestJSON<{ data: AgentInstalledSkill[] }>(config, '/api/v1/settings/agent/skills/import', { method: 'POST', body: form });
 			const imported = payload.data || [];
-			const refreshed = await requestJSON<{ data: HermesAgentSettings }>(config, '/api/v1/settings/agent');
+			const refreshed = await requestJSON<{ data: AgentSettings }>(config, '/api/v1/settings/agent');
 			setSkills(refreshed.data.skills || []);
 			setState('saved');
 			setMessage(`已导入 ${imported.length} 个 Skill，请在列表中确认启用状态。`);
@@ -100,7 +101,7 @@ export function HermesAgentSettingsPanel({ config, open }: Props) {
 		await installGitSkillURL(gitURL.trim());
 	};
 
-	const installGitSkillFromMarket = async (entry: HermesSkillMarketEntry) => {
+	const installGitSkillFromMarket = async (entry: AgentSkillMarketEntry) => {
 		await installGitSkillURL(entry.path);
 	};
 
@@ -116,7 +117,7 @@ export function HermesAgentSettingsPanel({ config, open }: Props) {
 			if (!reader) throw new Error('浏览器不支持读取下载进度');
 			const decoder = new TextDecoder();
 			let pending = '';
-			let installed: HermesInstalledSkill[] = [];
+			let installed: AgentInstalledSkill[] = [];
 			while (true) {
 				const { value, done } = await reader.read();
 				pending += decoder.decode(value || new Uint8Array(), { stream: !done });
@@ -124,7 +125,7 @@ export function HermesAgentSettingsPanel({ config, open }: Props) {
 				pending = lines.pop() || '';
 				for (const line of lines) {
 					if (!line.trim()) continue;
-					const event = JSON.parse(line) as { type: string; url?: string; downloaded?: number; total?: number; bytes_per_second?: number; data?: HermesInstalledSkill[]; error?: string };
+					const event = JSON.parse(line) as { type: string; url?: string; downloaded?: number; total?: number; bytes_per_second?: number; data?: AgentInstalledSkill[]; error?: string };
 					if (event.type === 'started') setDownloadProgress((current) => ({ downloaded: current?.downloaded || 0, total: current?.total || 0, bytesPerSecond: current?.bytesPerSecond || 0, url: event.url || current?.url || '' }));
 					if (event.type === 'progress') {
 						setDownloadProgress((current) => ({ downloaded: event.downloaded || 0, total: event.total || 0, bytesPerSecond: event.bytes_per_second || 0, url: current?.url || '' }));
@@ -137,7 +138,7 @@ export function HermesAgentSettingsPanel({ config, open }: Props) {
 				}
 				if (done) break;
 			}
-			const refreshed = await requestJSON<{ data: HermesAgentSettings }>(config, '/api/v1/settings/agent');
+			const refreshed = await requestJSON<{ data: AgentSettings }>(config, '/api/v1/settings/agent');
 			setSkills(refreshed.data.skills || []);
 			setGitURL('');
 			setState('saved');
@@ -150,7 +151,7 @@ export function HermesAgentSettingsPanel({ config, open }: Props) {
 		}
 	};
 
-	const marketInstalled = (entry: HermesSkillMarketEntry) => skills.some((skill) => skill.name === entry.path.split('/').pop());
+	const marketInstalled = (entry: AgentSkillMarketEntry) => skills.some((skill) => skill.name === entry.path.split('/').pop());
 
 	const deleteSkill = async (name: string) => {
 		if (!config) return;
@@ -159,7 +160,7 @@ export function HermesAgentSettingsPanel({ config, open }: Props) {
 		setMessage('');
 		try {
 			await requestJSON(config, '/api/v1/settings/agent/skills/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
-			const refreshed = await requestJSON<{ data: HermesAgentSettings }>(config, '/api/v1/settings/agent');
+			const refreshed = await requestJSON<{ data: AgentSettings }>(config, '/api/v1/settings/agent');
 			setSkills(refreshed.data.skills || []);
 			setState('saved');
 			setMessage(`已删除 Skill「${name}」。`);
@@ -174,7 +175,7 @@ export function HermesAgentSettingsPanel({ config, open }: Props) {
 		setState('saving');
 		setMessage('');
 		try {
-			const payload = await requestJSON<{ data: HermesAgentSettings }>(config, '/api/v1/settings/agent', {
+			const payload = await requestJSON<{ data: AgentSettings }>(config, '/api/v1/settings/agent', {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -185,7 +186,7 @@ export function HermesAgentSettingsPanel({ config, open }: Props) {
 			setSkills(payload.data.skills || []);
 			setServers((payload.data.mcp_servers || []).map(toMCPDraft));
 			setState('saved');
-			setMessage('Skill 与 MCP 设置已同步到本机 Hermes；MCP 会自动重新加载。');
+			setMessage('Skill 与 MCP 设置已同步到本机 Agent；MCP 会自动重新加载。');
 		} catch (error) {
 			setState('error');
 			setMessage(error instanceof Error ? error.message : '保存 Skill/MCP 设置失败');
@@ -193,9 +194,8 @@ export function HermesAgentSettingsPanel({ config, open }: Props) {
 	};
 
 	return (
-		<section className="settings-section hermes-agent-settings" onKeyDown={(event) => { if (event.key === 'Enter' && event.target instanceof HTMLInputElement) event.preventDefault(); }}>
-			<div className="settings-section-title"><Puzzle size={18} /><div><h3>Skill 与 MCP</h3><p>控制 Hermes 可加载的本机技能，并连接 stdio、Streamable HTTP 或 SSE MCP Server。</p></div></div>
-			{state === 'loading' ? <div className="agent-settings-loading"><LoaderCircle className="spin" size={18} />读取 Hermes 能力配置</div> : <>
+		<SettingsSection className="agent-agent-settings" title="Skill 与 MCP" description="控制 Agent 可加载的本机技能，并连接 stdio、Streamable HTTP 或 SSE MCP Server。" icon={<Puzzle size={18} />} onKeyDown={(event) => { if (event.key === 'Enter' && event.target instanceof HTMLInputElement) event.preventDefault(); }}>
+			{state === 'loading' ? <div className="agent-settings-loading"><LoaderCircle className="spin" size={18} />读取 Agent 能力配置</div> : <>
 				<div className="agent-settings-block">
 					<div className="agent-settings-heading"><div><strong>Skills</strong><span>{enabledSkillCount}/{skills.length} 个已启用</span></div><div className="agent-settings-heading-actions"><label><Search size={14} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索 Skill" /></label><button type="button" onClick={() => directoryInput.current?.click()}><Plus size={14} />导入目录</button><button type="button" onClick={() => zipInput.current?.click()}><Plus size={14} />导入 ZIP</button><input ref={directoryInput} type="file" hidden multiple {...({ webkitdirectory: '', directory: '' } as Record<string, string>)} onChange={(event) => void importSkills(event.target.files)} /><input ref={zipInput} type="file" hidden accept=".zip,application/zip" onChange={(event) => void importSkills(event.target.files)} /></div></div>
 					<div className="skill-git-import"><input value={gitURL} onChange={(event) => setGitURL(event.target.value)} placeholder="GitHub 仓库地址，例如 https://github.com/openai/skills" /><button type="button" disabled={!gitURL.trim() || state === 'saving'} onClick={() => void installGitSkill()}><Plus size={14} />从 GitHub 安装</button>{gitURL.trim() && <a className="skill-git-link" href={gitURL.trim()} target="_blank" rel="noreferrer" title="打开 GitHub 页面"><ExternalLink size={14} />查看页面</a>}</div>
@@ -217,7 +217,7 @@ export function HermesAgentSettingsPanel({ config, open }: Props) {
 				</div>
 			</>}
 			<div className={`agent-settings-footer ${state}`}><span>{state === 'saved' ? <CheckCircle2 size={14} /> : state === 'error' ? <CircleAlert size={14} /> : <ShieldCheck size={14} />}{message || 'MCP 环境变量和请求头按密钥处理，页面不会取回已保存的原文。'}</span><button type="button" onClick={() => void save()} disabled={!config || state === 'loading' || state === 'saving'}>{state === 'saving' ? <LoaderCircle className="spin" size={15} /> : <Save size={15} />}保存 Skill/MCP</button></div>
-		</section>
+		</SettingsSection>
 	);
 }
 
@@ -242,7 +242,7 @@ function SecretMapEditor({ label, entries, onChange, onAdd, onRemove }: { label:
 	return <div className="mcp-secret-map"><div><span>{label}</span><button type="button" onClick={onAdd}><Plus size={12} />添加</button></div>{entries.map((entry) => <div className={`mcp-secret-row ${entry.remove ? 'removed' : ''}`} key={entry.id}><input value={entry.key} onChange={(event) => onChange(entry.id, { key: event.target.value })} placeholder="KEY" disabled={entry.configured} /><input type="password" value={entry.value} onChange={(event) => onChange(entry.id, { value: event.target.value, remove: false })} placeholder={entry.configured ? `${entry.masked || '已配置'}（留空保留）` : 'VALUE'} disabled={entry.remove} /><button type="button" onClick={() => onRemove(entry.id)} aria-label={entry.remove ? `撤销删除 ${entry.key}` : `删除 ${entry.key || label}`}>{entry.remove ? '撤销' : <Trash2 size={13} />}</button></div>)}</div>;
 }
 
-function toMCPDraft(server: HermesMCPServerSetting): MCPDraft {
+function toMCPDraft(server: AgentMCPServerSetting): MCPDraft {
 	return { ...server, id: nextID('mcp'), originalName: server.name, transport: server.transport || 'stdio', argsText: (server.args || []).join('\n'), env: toSecretDrafts(server.env, 'env'), headers: toSecretDrafts(server.headers, 'header') };
 }
 

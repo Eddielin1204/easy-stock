@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"easy-stock/backend/internal/hermes"
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/review"
 	"easy-stock/backend/internal/runtimelog"
 	"easy-stock/backend/internal/stockanalysis"
@@ -29,7 +29,7 @@ type DailySummaryStore interface {
 type ExpectationService struct {
 	store          *Store
 	reviews        DailySummaryStore
-	gateway        hermes.Gateway
+	gateway        agent.Gateway
 	analyze        StockAnalyzer
 	analyzeHolding HoldingAnalyzer
 	logger         *log.Logger
@@ -38,7 +38,7 @@ type ExpectationService struct {
 	runningID      string
 }
 
-func NewExpectationService(store *Store, reviews DailySummaryStore, gateway hermes.Gateway, analyze StockAnalyzer, logger *log.Logger, holdingAnalyzers ...HoldingAnalyzer) *ExpectationService {
+func NewExpectationService(store *Store, reviews DailySummaryStore, gateway agent.Gateway, analyze StockAnalyzer, logger *log.Logger, holdingAnalyzers ...HoldingAnalyzer) *ExpectationService {
 	service := &ExpectationService{store: store, reviews: reviews, gateway: gateway, analyze: analyze, logger: logger, concurrency: DefaultConcurrency}
 	if len(holdingAnalyzers) > 0 {
 		service.analyzeHolding = holdingAnalyzers[0]
@@ -146,6 +146,13 @@ func (s *ExpectationService) run(job ExpectationJob, summary review.DailySummary
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Minute)
 	defer cancel()
+	ctx, release, bindErr := agent.BindTask(ctx, s.gateway)
+	if bindErr != nil {
+		job.Status, job.Error, job.CompletedAt = "failed", bindErr.Error(), time.Now().UTC()
+		s.persistExpectation(job)
+		return
+	}
+	defer release()
 	work := make(chan int)
 	type analysisEvent struct {
 		index          int
@@ -222,7 +229,7 @@ func (s *ExpectationService) run(job ExpectationJob, summary review.DailySummary
 		prompt, promptErr := buildExpectationPrompt(summary, request, job.Results, metrics, rules)
 		if promptErr != nil {
 			aiErr = promptErr
-		} else if response, err := hermes.PromptFullyAuthorized(hermes.WithUsageModule(ctx, "portfolio-expectation"), s.gateway, prompt); err != nil {
+		} else if response, err := agent.PromptFullyAuthorized(agent.WithUsageModule(ctx, "portfolio-expectation"), s.gateway, prompt); err != nil {
 			aiErr = fmt.Errorf("持仓明日预期AI分析失败: %w", err)
 		} else if err := decodeJSONObject(response.Content, &conclusion); err != nil {
 			aiErr = fmt.Errorf("持仓明日预期AI未返回有效JSON: %w", err)

@@ -12,11 +12,12 @@ import (
 	"sync"
 	"time"
 
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/appsettings"
-	"easy-stock/backend/internal/hermes"
 )
 
 type tokenUsageEntry struct {
+	Runtime             string `json:"runtime,omitempty"`
 	Date                string `json:"date"`
 	Module              string `json:"module"`
 	OriginalModule      string `json:"original_module,omitempty"`
@@ -35,6 +36,7 @@ type tokenUsageStore struct {
 	Entries []tokenUsageEntry `json:"entries"`
 }
 type tokenUsageRequest struct {
+	Runtime    string `json:"runtime,omitempty"`
 	Module     string `json:"module"`
 	Model      string `json:"model,omitempty"`
 	Prompt     int    `json:"prompt_tokens"`
@@ -95,13 +97,13 @@ func (s *tokenUsageStore) add(req tokenUsageRequest) {
 		entry.Total += req.Total
 	}
 	for i := range s.Entries {
-		if s.Entries[i].Date == date && s.Entries[i].Module == req.Module && s.Entries[i].Model == model {
+		if s.Entries[i].Date == date && s.Entries[i].Module == req.Module && s.Entries[i].Model == model && s.Entries[i].Runtime == req.Runtime {
 			apply(&s.Entries[i])
 			s.persist()
 			return
 		}
 	}
-	entry := tokenUsageEntry{Date: date, Module: req.Module, Model: model}
+	entry := tokenUsageEntry{Runtime: req.Runtime, Date: date, Module: req.Module, Model: model}
 	apply(&entry)
 	s.Entries = append(s.Entries, entry)
 	s.persist()
@@ -116,26 +118,30 @@ func (s *tokenUsageStore) persist() {
 }
 
 type tokenUsageGateway struct {
-	hermes.Gateway
+	agent.Gateway
 	store *tokenUsageStore
 }
 
-func newTokenUsageGateway(gateway hermes.Gateway, store *tokenUsageStore) hermes.Gateway {
+func (g *tokenUsageGateway) BindTask(ctx context.Context) (context.Context, func(), error) {
+	return agent.BindTask(ctx, g.Gateway)
+}
+
+func newTokenUsageGateway(gateway agent.Gateway, store *tokenUsageStore) agent.Gateway {
 	if gateway == nil {
 		return nil
 	}
 	return &tokenUsageGateway{Gateway: gateway, store: store}
 }
 
-func (g *tokenUsageGateway) Prompt(ctx context.Context, prompt string) (hermes.PromptResult, error) {
+func (g *tokenUsageGateway) Prompt(ctx context.Context, prompt string) (agent.PromptResult, error) {
 	result, err := g.Gateway.Prompt(ctx, prompt)
 	g.record(ctx, prompt, result, err)
 	return result, err
 }
 
-func (g *tokenUsageGateway) PromptWithOptions(ctx context.Context, prompt string, options hermes.PromptOptions) (hermes.PromptResult, error) {
+func (g *tokenUsageGateway) PromptWithOptions(ctx context.Context, prompt string, options agent.PromptOptions) (agent.PromptResult, error) {
 	prompter, ok := g.Gateway.(interface {
-		PromptWithOptions(context.Context, string, hermes.PromptOptions) (hermes.PromptResult, error)
+		PromptWithOptions(context.Context, string, agent.PromptOptions) (agent.PromptResult, error)
 	})
 	if !ok {
 		return g.Prompt(ctx, prompt)
@@ -145,26 +151,26 @@ func (g *tokenUsageGateway) PromptWithOptions(ctx context.Context, prompt string
 	return result, err
 }
 
-func (g *tokenUsageGateway) PromptWithBrowserState(ctx context.Context, prompt, statePath string) (hermes.PromptResult, error) {
-	prompter, ok := g.Gateway.(hermes.BrowserStatePrompter)
+func (g *tokenUsageGateway) PromptWithBrowserState(ctx context.Context, prompt, statePath string) (agent.PromptResult, error) {
+	prompter, ok := g.Gateway.(agent.BrowserStatePrompter)
 	if !ok {
-		return hermes.PromptResult{}, fmt.Errorf("Hermes 不支持浏览器登录态提示词")
+		return agent.PromptResult{}, fmt.Errorf("Hermes 不支持浏览器登录态提示词")
 	}
 	result, err := prompter.PromptWithBrowserState(ctx, prompt, statePath)
 	g.record(ctx, prompt, result, err)
 	return result, err
 }
 
-func (g *tokenUsageGateway) AgentSettings() (hermes.AgentSettings, error) {
-	gateway, ok := g.Gateway.(hermes.SettingsGateway)
+func (g *tokenUsageGateway) AgentSettings() (agent.AgentSettings, error) {
+	gateway, ok := g.Gateway.(agent.SettingsGateway)
 	if !ok {
-		return hermes.AgentSettings{}, fmt.Errorf("Hermes 设置接口不可用")
+		return agent.AgentSettings{}, fmt.Errorf("Hermes 设置接口不可用")
 	}
 	return gateway.AgentSettings()
 }
 
-func (g *tokenUsageGateway) SyncAgentSettings(settings hermes.AgentSettings) error {
-	gateway, ok := g.Gateway.(hermes.SettingsGateway)
+func (g *tokenUsageGateway) SyncAgentSettings(settings agent.AgentSettings) error {
+	gateway, ok := g.Gateway.(agent.SettingsGateway)
 	if !ok {
 		return fmt.Errorf("Hermes 设置接口不可用")
 	}
@@ -172,7 +178,7 @@ func (g *tokenUsageGateway) SyncAgentSettings(settings hermes.AgentSettings) err
 }
 
 func (g *tokenUsageGateway) SyncLLMProfile(cfg appsettings.LLM, profileID string, keyUpdate *string) error {
-	gateway, ok := g.Gateway.(hermes.ProfileGateway)
+	gateway, ok := g.Gateway.(agent.ProfileGateway)
 	if !ok {
 		return fmt.Errorf("Hermes 模型配置接口不可用")
 	}
@@ -180,7 +186,7 @@ func (g *tokenUsageGateway) SyncLLMProfile(cfg appsettings.LLM, profileID string
 }
 
 func (g *tokenUsageGateway) StoreLLMProfileKey(profileID string, keyUpdate *string) error {
-	gateway, ok := g.Gateway.(hermes.ProfileGateway)
+	gateway, ok := g.Gateway.(agent.ProfileGateway)
 	if !ok {
 		return fmt.Errorf("Hermes 模型密钥接口不可用")
 	}
@@ -188,14 +194,14 @@ func (g *tokenUsageGateway) StoreLLMProfileKey(profileID string, keyUpdate *stri
 }
 
 func (g *tokenUsageGateway) ModelAPIKeyForProfile(profileID string) (string, error) {
-	gateway, ok := g.Gateway.(hermes.ProfileGateway)
+	gateway, ok := g.Gateway.(agent.ProfileGateway)
 	if !ok {
 		return "", fmt.Errorf("Hermes 模型密钥接口不可用")
 	}
 	return gateway.ModelAPIKeyForProfile(profileID)
 }
 
-func (g *tokenUsageGateway) record(ctx context.Context, prompt string, result hermes.PromptResult, callErr error) {
+func (g *tokenUsageGateway) record(ctx context.Context, prompt string, result agent.PromptResult, callErr error) {
 	if g.store == nil {
 		return
 	}
@@ -216,19 +222,19 @@ func (g *tokenUsageGateway) record(ctx context.Context, prompt string, result he
 	if usage.TotalTokens <= 0 {
 		return
 	}
-	module := hermes.UsageModule(ctx)
+	module := agent.UsageModule(ctx)
 	if module == "" {
 		module = "other"
 	}
-	g.store.add(tokenUsageRequest{Module: module, Model: usage.Model, Prompt: usage.PromptTokens, Completion: usage.CompletionTokens, Total: usage.TotalTokens, Estimated: estimated})
+	g.store.add(tokenUsageRequest{Runtime: result.Runtime, Module: module, Model: usage.Model, Prompt: usage.PromptTokens, Completion: usage.CompletionTokens, Total: usage.TotalTokens, Estimated: estimated})
 }
 
 // Some compatible providers omit usage from their response. Estimates stay in
 // dedicated fields so they never inflate the real provider-reported usage.
-func estimateTokenUsage(prompt, content string) hermes.TokenUsage {
+func estimateTokenUsage(prompt, content string) agent.TokenUsage {
 	promptTokens := estimateTextTokens(prompt)
 	completionTokens := estimateTextTokens(content)
-	return hermes.TokenUsage{PromptTokens: promptTokens, CompletionTokens: completionTokens, TotalTokens: promptTokens + completionTokens}
+	return agent.TokenUsage{PromptTokens: promptTokens, CompletionTokens: completionTokens, TotalTokens: promptTokens + completionTokens}
 }
 
 func estimateTextTokens(text string) int {
@@ -255,6 +261,7 @@ func (s *Server) tokenUsageSummary(w http.ResponseWriter, r *http.Request) {
 	s.tokenUsage.mu.Lock()
 	defer s.tokenUsage.mu.Unlock()
 	type row struct {
+		Runtime             string `json:"runtime,omitempty"`
 		Date                string `json:"date"`
 		Module              string `json:"module"`
 		OriginalModule      string `json:"original_module,omitempty"`
@@ -279,7 +286,7 @@ func (s *Server) tokenUsageSummary(w http.ResponseWriter, r *http.Request) {
 		if period == "month" && len(date) >= 7 {
 			date = date[:7]
 		}
-		key := date + "\x00" + e.Module + "\x00" + e.Model
+		key := date + "\x00" + e.Module + "\x00" + e.Model + "\x00" + e.Runtime
 		if existing, ok := index[key]; ok {
 			rows[existing].Prompt += e.Prompt
 			rows[existing].Completion += e.Completion
@@ -290,7 +297,7 @@ func (s *Server) tokenUsageSummary(w http.ResponseWriter, r *http.Request) {
 		} else {
 			index[key] = len(rows)
 			rows = append(rows, row{
-				Date: date, Module: e.Module, Model: e.Model, OriginalModule: e.OriginalModule,
+				Runtime: e.Runtime, Date: date, Module: e.Module, Model: e.Model, OriginalModule: e.OriginalModule,
 				Prompt: e.Prompt, Completion: e.Completion, Total: e.Total,
 				EstimatedPrompt: e.EstimatedPrompt, EstimatedCompletion: e.EstimatedCompletion, EstimatedTotal: e.EstimatedTotal,
 			})

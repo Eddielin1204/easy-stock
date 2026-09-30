@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"easy-stock/backend/internal/hermes"
+	"easy-stock/backend/internal/agent"
 )
 
 const validLadderTheme = `{"themes":["固态电池"],"reason":"逐股涨停资料指向固态电池炒作，尚不能确认具体业务进展","caveat":"具体业务进展尚待公告验证","basis":"web","confidence":"medium","sources":[{"title":"当日上涨题材报道","url":"https://example.com/news","date":"2026-09-18","snippet":"报道提到该股受固态电池题材关注"}]}`
@@ -19,15 +19,15 @@ type ladderThemePrompter struct {
 	response string
 	err      error
 	calls    int
-	options  hermes.PromptOptions
+	options  agent.PromptOptions
 	prompt   string
 }
 
-func (p *ladderThemePrompter) PromptWithOptions(_ context.Context, prompt string, options hermes.PromptOptions) (hermes.PromptResult, error) {
+func (p *ladderThemePrompter) PromptWithOptions(_ context.Context, prompt string, options agent.PromptOptions) (agent.PromptResult, error) {
 	p.calls++
 	p.options = options
 	p.prompt = prompt
-	return hermes.PromptResult{Content: p.response}, p.err
+	return agent.PromptResult{Content: p.response}, p.err
 }
 func TestLadderThemeCacheSuccessForeverAndForceFailure(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")

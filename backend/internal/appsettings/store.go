@@ -34,8 +34,8 @@ func NormalizeLLMResponseTimeoutSeconds(value int) int {
 }
 
 // LLMProfile is a named model connection. API keys are deliberately not
-// persisted in the general settings file; Hermes owns the encrypted-at-rest
-// (local .env) secret for each profile.
+// persisted in the general settings file; the shared agent configuration owns
+// each profile's secret in a permission-restricted local store.
 type LLMProfile struct {
 	ID               string `json:"id"`
 	Name             string `json:"name"`
@@ -73,6 +73,7 @@ type ReviewSourceProfile struct {
 }
 
 type Values struct {
+	AgentRuntime       string           `json:"agent_runtime,omitempty"`
 	LLM                LLM              `json:"llm"`
 	LLMProfiles        []LLMProfile     `json:"llm_profiles,omitempty"`
 	ActiveLLMProfileID string           `json:"active_llm_profile_id,omitempty"`
@@ -107,17 +108,37 @@ func (s *Store) Snapshot() Values {
 }
 
 func (s *Store) Update(update func(*Values) error) (Values, error) {
+	return s.UpdatePrepared(update, nil)
+}
+
+// UpdatePrepared coordinates runtime projections with settings persistence.
+// prepare returns a completion callback; false restores the previous runtime.
+func (s *Store) UpdatePrepared(update func(*Values) error, prepare func(Values) (func(bool) error, error)) (Values, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	next := s.values
+	// Callbacks must never mutate slices owned by the previous snapshot.
+	next.LLMProfiles = append([]LLMProfile(nil), next.LLMProfiles...)
+	next.ReviewAutomation.Profiles = append([]ReviewSourceProfile(nil), next.ReviewAutomation.Profiles...)
 	if err := update(&next); err != nil {
 		return Values{}, err
 	}
+	complete := func(bool) error { return nil }
+	if prepare != nil {
+		var err error
+		complete, err = prepare(next)
+		if err != nil {
+			return Values{}, err
+		}
+	}
 	next.UpdatedAt = time.Now()
 	if err := s.persist(next); err != nil {
-		return Values{}, err
+		return Values{}, errors.Join(err, complete(false))
 	}
 	s.values = next
+	if err := complete(true); err != nil {
+		return Values{}, err
+	}
 	return next, nil
 }
 

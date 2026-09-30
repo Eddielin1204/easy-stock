@@ -8,6 +8,7 @@ export type BackendConfig = {
 
 export type TokenUsageSummary = {
 	rows: Array<{
+		runtime?: string;
 		date: string;
 		module: string;
 		original_module?: string;
@@ -106,7 +107,10 @@ export type SecretSettingStatus = {
 };
 
 export type AppSettings = {
-	hermes: {
+	agent_runtime?: 'hermes' | 'codex';
+	runtimes?: Record<string, { available: boolean; configured: boolean; version?: string; message?: string; }>;
+	agent: {
+        configuration_id?: string;
 		available: boolean;
 		configured: boolean;
 		api_key_configured: boolean;
@@ -146,14 +150,14 @@ export type LLMProfile = {
 	api_key: SecretSettingStatus;
 };
 
-export type HermesSkillSetting = {
+export type AgentSkillSetting = {
 	name: string;
 	description: string;
 	category: string;
 	enabled: boolean;
 };
 
-export type HermesMCPServerSetting = {
+export type AgentMCPServerSetting = {
 	name: string;
 	enabled: boolean;
 	transport: 'stdio' | 'http' | 'sse';
@@ -174,20 +178,20 @@ export type ReasoningCapability = {
  note: string;
 };
 
-export type HermesAgentSettings = {
+export type AgentSettings = {
  reasoning?: ReasoningCapability;
  reasoning_context?: string;
   reasoning_effort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | string;
-  skills: HermesSkillSetting[];
-  mcp_servers: HermesMCPServerSetting[];
+  skills: AgentSkillSetting[];
+  mcp_servers: AgentMCPServerSetting[];
 };
 
-export type HermesInstalledSkill = HermesSkillSetting & {
+export type AgentInstalledSkill = AgentSkillSetting & {
 	source: string;
 	path: string;
 };
 
-export type HermesSkillMarketEntry = {
+export type AgentSkillMarketEntry = {
 	id: string;
 	name: string;
 	description: string;
@@ -196,7 +200,7 @@ export type HermesSkillMarketEntry = {
 	category: string;
 };
 
-export type HermesSkillMarketSource = {
+export type AgentSkillMarketSource = {
 	id: string;
 	name: string;
 	region: string;
@@ -209,7 +213,7 @@ export type LLMConnectionTestResult = {
 	provider: string;
 	model: string;
 	api_mode: string;
-	runtime: 'hermes' | string;
+	runtime: 'hermes' | 'codex' | string;
 	latency_ms: number;
 	response: string;
 };

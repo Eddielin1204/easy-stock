@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"easy-stock/backend/internal/hermes"
+	"easy-stock/backend/internal/agent"
 )
 
 type ResearchProgress func(stage, message string)
@@ -88,7 +88,7 @@ conditions最多6条，至少包含一条能推翻核心判断的条件并放入
 [压缩证据与交易条件参考]
 `
 
-func RunResearch(ctx context.Context, prompter hermes.Prompter, snapshot *ResearchSnapshot, analysis *Analysis, request ResearchRequest, model string, supplement SupplementFunc, progress ResearchProgress) error {
+func RunResearch(ctx context.Context, prompter agent.Prompter, snapshot *ResearchSnapshot, analysis *Analysis, request ResearchRequest, model string, supplement SupplementFunc, progress ResearchProgress) error {
 	if prompter == nil || snapshot == nil || analysis == nil {
 		return fmt.Errorf("AI研究底座不可用")
 	}
@@ -193,12 +193,12 @@ func RunResearch(ctx context.Context, prompter hermes.Prompter, snapshot *Resear
 	}
 	result.Decision.Horizon = request.Horizon
 	progress("validating", "正在核对证据引用、条件和价格依据")
-	report := ResearchReport{ResearchSynthesis: result, SnapshotID: snapshot.ID, SnapshotVersion: snapshot.Version, PromptVersion: ResearchPromptVersion, Request: request, AnalysisLevel: level, Model: model, GeneratedAt: time.Now().UTC(), CutoffAt: snapshot.CutoffAt, Sources: snapshot.Sources, Anchors: snapshot.Anchors, Questions: outline.Questions, Attempts: attempts, Compression: compressionFromPack(tradePack), Validation: "references_checked", ValidationNotes: notes}
+	report := ResearchReport{Runtime: agent.BoundRuntime(ctx), ResearchSynthesis: result, SnapshotID: snapshot.ID, SnapshotVersion: snapshot.Version, PromptVersion: ResearchPromptVersion, Request: request, AnalysisLevel: level, Model: model, GeneratedAt: time.Now().UTC(), CutoffAt: snapshot.CutoffAt, Sources: snapshot.Sources, Anchors: snapshot.Anchors, Questions: outline.Questions, Attempts: attempts, Compression: compressionFromPack(tradePack), Validation: "references_checked", ValidationNotes: notes}
 	ApplyResearch(analysis, &report, *snapshot)
 	return nil
 }
 
-func runQuickResearch(ctx context.Context, prompter hermes.Prompter, snapshot *ResearchSnapshot, analysis *Analysis, request ResearchRequest, model string, progress ResearchProgress) error {
+func runQuickResearch(ctx context.Context, prompter agent.Prompter, snapshot *ResearchSnapshot, analysis *Analysis, request ResearchRequest, model string, progress ResearchProgress) error {
 	attempts := []ResearchAttempt{}
 	pack := buildResearchEvidencePack(*snapshot, request, researchPromptSynthesis, nil)
 	progress("synthesizing", "AI正在快速研判")
@@ -220,12 +220,12 @@ func runQuickResearch(ctx context.Context, prompter hermes.Prompter, snapshot *R
 	if err != nil {
 		return fmt.Errorf("AI快速研判未通过证据结构校验：%w", err)
 	}
-	report := ResearchReport{ResearchSynthesis: result, SnapshotID: snapshot.ID, SnapshotVersion: snapshot.Version, PromptVersion: ResearchPromptVersion, Request: request, AnalysisLevel: request.AnalysisLevel, Model: model, GeneratedAt: time.Now().UTC(), CutoffAt: snapshot.CutoffAt, Sources: snapshot.Sources, Anchors: snapshot.Anchors, Questions: []ResearchQuestion{}, Attempts: attempts, Compression: compressionFromPack(pack), Validation: "references_checked", ValidationNotes: notes}
+	report := ResearchReport{Runtime: agent.BoundRuntime(ctx), ResearchSynthesis: result, SnapshotID: snapshot.ID, SnapshotVersion: snapshot.Version, PromptVersion: ResearchPromptVersion, Request: request, AnalysisLevel: request.AnalysisLevel, Model: model, GeneratedAt: time.Now().UTC(), CutoffAt: snapshot.CutoffAt, Sources: snapshot.Sources, Anchors: snapshot.Anchors, Questions: []ResearchQuestion{}, Attempts: attempts, Compression: compressionFromPack(pack), Validation: "references_checked", ValidationNotes: notes}
 	ApplyResearch(analysis, &report, *snapshot)
 	return nil
 }
 
-func runStandardResearch(ctx context.Context, prompter hermes.Prompter, snapshot *ResearchSnapshot, analysis *Analysis, request ResearchRequest, model string, progress ResearchProgress) error {
+func runStandardResearch(ctx context.Context, prompter agent.Prompter, snapshot *ResearchSnapshot, analysis *Analysis, request ResearchRequest, model string, progress ResearchProgress) error {
 	attempts := []ResearchAttempt{}
 	repairUsed := false
 	options := func(stage string) promptJSONObjectOptions {
@@ -263,7 +263,7 @@ func runStandardResearch(ctx context.Context, prompter hermes.Prompter, snapshot
 	if err != nil {
 		return fmt.Errorf("AI标准研判未通过证据结构校验：%w", err)
 	}
-	report := ResearchReport{ResearchSynthesis: result, SnapshotID: snapshot.ID, SnapshotVersion: snapshot.Version, PromptVersion: ResearchPromptVersion, Request: request, AnalysisLevel: request.AnalysisLevel, Model: model, GeneratedAt: time.Now().UTC(), CutoffAt: snapshot.CutoffAt, Sources: snapshot.Sources, Anchors: snapshot.Anchors, Questions: []ResearchQuestion{}, Attempts: attempts, Compression: compressionFromPack(tradePack), Validation: "references_checked", ValidationNotes: notes}
+	report := ResearchReport{Runtime: agent.BoundRuntime(ctx), ResearchSynthesis: result, SnapshotID: snapshot.ID, SnapshotVersion: snapshot.Version, PromptVersion: ResearchPromptVersion, Request: request, AnalysisLevel: request.AnalysisLevel, Model: model, GeneratedAt: time.Now().UTC(), CutoffAt: snapshot.CutoffAt, Sources: snapshot.Sources, Anchors: snapshot.Anchors, Questions: []ResearchQuestion{}, Attempts: attempts, Compression: compressionFromPack(tradePack), Validation: "references_checked", ValidationNotes: notes}
 	ApplyResearch(analysis, &report, *snapshot)
 	return nil
 }

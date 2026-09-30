@@ -25,6 +25,8 @@ coverage/
 **/Partitions/
 
 # Dependencies and generated build/package artifacts.
+__pycache__/
+*.pyc
 node_modules/
 frontend/dist/
 frontend/*.tsbuildinfo
@@ -38,6 +40,7 @@ backend/server
 
 # Hermes and model/provider credentials.
 **/hermes-home/
+**/codex-home/
 **/.env
 **/.env.*
 !**/.env.example

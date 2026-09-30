@@ -20,15 +20,15 @@ import {
 	ChatConversation,
 	ChatMessage,
 	chatModelKey,
-	clearHermesSessionIDs,
+	clearAgentSessionIDs,
 	createChatConversation,
 	createChatID,
 	deriveChatTitle,
 	parseStoredConversations,
-	resumableHermesSessionID,
+	resumableAgentSessionID,
 	storeableConversations,
 } from '../lib/chat';
-import { streamHermesPrompt, type HermesClarifyRequest } from '../lib/hermes';
+import { streamAgentPrompt, type AgentClarifyRequest } from '../lib/agent';
 import { MessageContent } from './MarkdownContent';
 import { AIThinkingPanel } from './AIThinkingPanel';
 
@@ -93,7 +93,8 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 	const [pendingMessageID, setPendingMessageID] = useState('');
 	const [activityStatus, setActivityStatus] = useState('正在理解问题并组织答案…');
 	const [approvalRequest, setApprovalRequest] = useState<{ description?: string; command?: string; respond: (choice: 'once' | 'session' | 'deny') => void } | null>(null);
-	const [clarifyRequest, setClarifyRequest] = useState<{ request: HermesClarifyRequest; respond: (answer: string) => void } | null>(null);
+	const [agentRuntime, setAgentRuntime] = useState('hermes');
+	const [clarifyRequest, setClarifyRequest] = useState<{ request: AgentClarifyRequest; respond: (answer: string) => void } | null>(null);
 	const [clarifyDraft, setClarifyDraft] = useState('');
 	const abortRef = useRef<AbortController | null>(null);
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -160,19 +161,20 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 		setManualModelEditing(false);
 		try {
 			const payload = await requestJSON<{ data: AppSettings }>(config, '/api/v1/settings');
-			const { hermes, llm } = payload.data;
+			const { agent, llm } = payload.data;
+			setAgentRuntime(payload.data.agent_runtime || 'hermes');
 			const profiles = payload.data.llm_profiles || [];
 			setLLMProfiles(profiles);
 			setActiveLLMProfileID(payload.data.active_llm_profile_id || profiles[0]?.id || '');
 			const provider = llm.provider || 'openai';
 			const model = llm.model || llmProviderDefaultModel(provider);
 			const nextLLM = { provider, base_url: llm.base_url, model, api_mode: llm.api_mode };
-			const usable = hermes.available && hermes.configured;
+			const usable = agent.available && agent.configured;
 			setLLMConfig(nextLLM);
-			setModelState(usable ? 'ready' : hermes.available ? 'missing' : 'error');
+			setModelState(usable ? 'ready' : agent.available ? 'missing' : 'error');
 			setModelLabel(usable
-				? `Hermes · ${llmProviderName(provider)} · ${model}`
-				: hermes.message || (hermes.available ? '需要配置 Hermes 模型' : 'Hermes 运行时不可用'));
+				? `${payload.data.agent_runtime === 'codex' ? 'Codex' : 'Hermes'} · ${llmProviderName(provider)} · ${model}`
+				: agent.message || (agent.available ? '需要配置 Agent 模型' : 'Agent 运行时不可用'));
 
 			try {
 				const models = await requestChatModels(config, nextLLM, payload.data.active_llm_profile_id || profiles[0]?.id || '');
@@ -234,10 +236,10 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 			setModelOptions([]);
 			setModelListState('loading');
 			try { const models = await requestChatModels(config, active, profileID); setModelOptions(models.models); setModelListState('ready'); setModelListMessage(`已从模型服务获取 ${models.models.length} 个模型`); } catch { setModelListState('error'); }
-			setConversations((current) => clearHermesSessionIDs(current));
-			const usable = payload.data.hermes.available && payload.data.hermes.configured;
-			setModelState(usable ? 'ready' : payload.data.hermes.available ? 'missing' : 'error');
-			setModelLabel(usable ? `Hermes · ${llmProviderName(active.provider)} · ${active.model}` : payload.data.hermes.message || '需要配置 Hermes 模型');
+			setConversations((current) => clearAgentSessionIDs(current));
+			const usable = payload.data.agent.available && payload.data.agent.configured;
+			setModelState(usable ? 'ready' : payload.data.agent.available ? 'missing' : 'error');
+			setModelLabel(usable ? `${payload.data.agent_runtime === 'codex' ? 'Codex' : 'Hermes'} · ${llmProviderName(active.provider)} · ${active.model}` : payload.data.agent.message || '需要配置 Agent 模型');
 			setModelSwitchState('saved');
 			setModelSwitchMessage(`已切换为 ${profile.name}，下一条消息生效`);
 			window.setTimeout(() => { setModelSwitchState('idle'); setModelSwitchMessage(''); }, 3500);
@@ -257,15 +259,16 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ llm: { provider: llmConfig.provider, base_url: llmConfig.base_url, model: nextModel, api_mode: llmConfig.api_mode } }),
 			});
-			const { hermes, llm } = payload.data;
+			const { agent, llm } = payload.data;
+			setAgentRuntime(payload.data.agent_runtime || 'hermes');
 			const savedLLM = { provider: llm.provider, base_url: llm.base_url, model: llm.model, api_mode: llm.api_mode };
 			setLLMConfig(savedLLM);
-			setConversations((current) => clearHermesSessionIDs(current));
-			const usable = hermes.available && hermes.configured;
-			setModelState(usable ? 'ready' : hermes.available ? 'missing' : 'error');
+			setConversations((current) => clearAgentSessionIDs(current));
+			const usable = agent.available && agent.configured;
+			setModelState(usable ? 'ready' : agent.available ? 'missing' : 'error');
 			setModelLabel(usable
-				? `Hermes · ${llmProviderName(llm.provider)} · ${llm.model}`
-				: hermes.message || (hermes.available ? '需要配置 Hermes 模型' : 'Hermes 运行时不可用'));
+				? `${payload.data.agent_runtime === 'codex' ? 'Codex' : 'Hermes'} · ${llmProviderName(llm.provider)} · ${llm.model}`
+				: agent.message || (agent.available ? '需要配置 Agent 模型' : 'Agent 运行时不可用'));
 			setModelSwitchState('saved');
 			setModelSwitchMessage(`已切换为 ${llm.model}，下一条消息生效`);
 			modelMessageTimerRef.current = window.setTimeout(() => {
@@ -327,8 +330,7 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 
 		const now = new Date().toISOString();
 		const current = activeConversation || createChatConversation(now);
-		const modelKey = chatModelKey(llmConfig, activeLLMProfileID);
-		const hermesSessionID = resumableHermesSessionID(current, modelKey);
+		let modelKey = "";
 		const userMessage: ChatMessage = {
 			id: createChatID('message'),
 			role: 'user',
@@ -360,19 +362,30 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 		const controller = new AbortController();
 		abortRef.current = controller;
 		try {
+            const { data: latest } = await requestJSON<{data: AppSettings}>(config, '/api/v1/settings');
+            if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+            if (!latest.agent.available || !latest.agent.configured) throw new Error(latest.agent.message || '当前引擎不可用');
+            const runtime = latest.agent_runtime || 'hermes';
+            setAgentRuntime(runtime);
+            setLLMConfig(latest.llm);
+            setActiveLLMProfileID(latest.active_llm_profile_id);
+            setModelLabel(`${runtime === 'codex' ? 'Codex' : 'Hermes'} · ${llmProviderName(latest.llm.provider)} · ${latest.llm.model}`);
+            modelKey = chatModelKey(latest.llm, latest.active_llm_profile_id, runtime);
+            const agentSessionID = resumableAgentSessionID(current, modelKey);
 			const seedMessages = current.messages
 				.filter((message) => !message.error)
 				.slice(-40)
 				.map(({ role, content: messageContent }) => ({ role, content: messageContent }));
-			const result = await streamHermesPrompt({
+			const result = await streamAgentPrompt({
 				config,
+ configurationID: latest.agent.configuration_id,
 				prompt: content,
 				analysisID: current.analysis_id,
-				hermesSessionID,
+				agentSessionID,
 				seedMessages,
 				signal: controller.signal,
 				module: 'ai-chat',
-				onUsage: (usage) => { void requestJSON(config, '/api/v1/settings/token-usage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ module: 'ai-chat', ...usage }) }); },
+				onUsage: (usage) => { void requestJSON(config, '/api/v1/settings/token-usage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ module: 'ai-chat', ...usage, runtime }) }); },
 				onStatus: (status) => setActivityStatus(status.text || (status.kind === 'process' ? '正在执行操作…' : '正在处理…')),
 				onApproval: (approval, respond) => {
 					setApprovalRequest({ description: approval.description, command: approval.command, respond });
@@ -383,8 +396,8 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 					setClarifyDraft('');
 					setActivityStatus('等待你选择后继续');
 				},
-				onSession: (hermesSessionID) => setConversations((items) => items.map((conversation) => conversation.id === pendingConversation.id
-					? { ...conversation, hermes_session_id: hermesSessionID, hermes_model_key: modelKey }
+				onSession: (agentSessionID) => setConversations((items) => items.map((conversation) => conversation.id === pendingConversation.id
+					? { ...conversation, agent_session_id: agentSessionID, agent_model_key: modelKey }
 					: conversation)),
 				onDelta: (nextContent) => setConversations((items) => items.map((conversation) => conversation.id === pendingConversation.id
 					? { ...conversation, messages: conversation.messages.map((message) => message.id === assistantID ? { ...message, content: nextContent } : message) }
@@ -395,14 +408,14 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 			});
 			const completedAt = new Date().toISOString();
 			setConversations((items) => items.map((conversation) => conversation.id === pendingConversation.id
-				? { ...conversation, hermes_session_id: result.hermesSessionID || conversation.hermes_session_id, hermes_model_key: modelKey, messages: conversation.messages.map((message) => message.id === assistantID ? { ...message, content: result.content, reasoning: result.reasoning || message.reasoning, created_at: completedAt } : message), updated_at: completedAt }
+				? { ...conversation, agent_session_id: result.agentSessionID || conversation.agent_session_id, agent_model_key: modelKey, messages: conversation.messages.map((message) => message.id === assistantID ? { ...message, content: result.content, reasoning: result.reasoning || message.reasoning, created_at: completedAt } : message), updated_at: completedAt }
 				: conversation));
 			setModelState('ready');
 		} catch (error) {
 			if ((error as Error)?.name !== 'AbortError') {
 				const failedAt = new Date().toISOString();
 				setConversations((items) => items.map((conversation) => conversation.id === pendingConversation.id
-					? { ...conversation, messages: conversation.messages.map((message) => message.id === assistantID ? { ...message, content: error instanceof Error ? error.message : 'Hermes 对话请求失败，请稍后重试。', created_at: failedAt, error: true } : message), updated_at: failedAt }
+					? { ...conversation, messages: conversation.messages.map((message) => message.id === assistantID ? { ...message, content: error instanceof Error ? error.message : 'Agent 对话请求失败，请稍后重试。', created_at: failedAt, error: true } : message), updated_at: failedAt }
 					: conversation));
 			} else {
 				setConversations((items) => items.map((conversation) => conversation.id === pendingConversation.id
@@ -465,7 +478,7 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 					))}
 					{!conversations.length && <div className="ai-thread-empty"><Bot size={22} /><span>新对话会保存在本机</span></div>}
 				</div>
-				<div className="ai-local-note"><span className={`status-dot ${modelState}`} /><div><strong>{modelLabel}</strong><small>Hermes 会话与对话历史保存在当前设备</small></div></div>
+				<div className="ai-local-note"><span className={`status-dot ${modelState}`} /><div><strong>{modelLabel}</strong><small>Agent 会话与对话历史保存在当前设备</small></div></div>
 			</aside>
 
 			<div className="ai-conversation-panel">
@@ -480,7 +493,7 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 							<div className="ai-welcome-mark"><Bot size={28} /></div>
 							<span>AI RESEARCH COPILOT</span>
 							<h2>今天想一起研究什么？</h2>
-							<p>由本机 Hermes 驱动，并使用系统设置中的模型，像 Codex 一样围绕目标持续对话、拆解问题并形成可执行结果。</p>
+							<p>使用当前选择的运行引擎与共享模型，围绕目标持续对话、分析证据并形成研究结论。</p>
 							<div className="ai-starter-grid">{starterPrompts.map((prompt) => <button type="button" key={prompt} onClick={() => { setDraft(prompt); textareaRef.current?.focus(); }}>{prompt}<Send size={14} /></button>)}</div>
 						</div>
 					) : (
@@ -509,12 +522,12 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 					{sending && approvalRequest && <div className="ai-approval-card" role="alert"><strong>AI 请求执行外部操作</strong><p>{approvalRequest.description || '该操作可能修改本机文件或运行命令。'}</p>{approvalRequest.command && <code>{approvalRequest.command}</code>}<div><button type="button" onClick={() => { approvalRequest.respond('once'); setApprovalRequest(null); setActivityStatus('正在继续执行…'); }}>允许一次</button><button type="button" onClick={() => { approvalRequest.respond('session'); setApprovalRequest(null); setActivityStatus('本次会话已授权，继续执行…'); }}>本次会话允许</button><button type="button" className="deny" onClick={() => { approvalRequest.respond('deny'); setApprovalRequest(null); setActivityStatus('已拒绝操作，等待 AI 返回说明…'); }}>拒绝</button></div></div>}
 					{sending && clarifyRequest && <div className="ai-clarify-card" role="alert"><strong>AI 需要你的选择</strong><p>{clarifyRequest.request.question}</p>{clarifyRequest.request.choices.length > 0 && <div className="ai-clarify-choices">{clarifyRequest.request.choices.map((choice) => <button type="button" key={choice} onClick={() => answerClarify(choice)}>{choice}</button>)}</div>}<div className="ai-clarify-custom"><input value={clarifyDraft} onChange={(event) => setClarifyDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); answerClarify(clarifyDraft); } }} placeholder={clarifyRequest.request.choices.length ? '其他想法，直接输入…' : '输入你的回答…'} autoFocus /><button type="button" disabled={!clarifyDraft.trim()} onClick={() => answerClarify(clarifyDraft)}>发送</button></div><small>不回复的话，AI 会在等待约 5 分钟后自行继续。</small></div>}
 					<div className={`ai-composer ${sending ? 'sending' : ''}`}>
-						<textarea ref={textareaRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder={modelState === 'missing' ? '请先配置 Hermes 模型后开始对话' : modelState === 'error' ? 'Hermes 运行时不可用，请检查安装或设置' : '向 Hermes AI 描述任务，Enter 发送，Shift + Enter 换行'} disabled={!config || modelState !== 'ready'} rows={1} />
+						<textarea ref={textareaRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder={modelState === 'missing' ? '请先配置 Agent 模型后开始对话' : modelState === 'error' ? 'Agent 运行时不可用，请检查安装或设置' : '向 Agent AI 描述任务，Enter 发送，Shift + Enter 换行'} disabled={!config || modelState !== 'ready'} rows={1} />
 						<div className="ai-composer-actions"><span>AI 可能会犯错，请核对关键事实与交易数据。</span>{sending ? <button type="button" className="stop" onClick={stop} title="停止生成"><Square size={14} />停止</button> : <button type="submit" disabled={!draft.trim() || !config || modelState !== 'ready'} title="发送消息"><Send size={15} />发送</button>}</div>
 					</div>
 					<div className="ai-conversation-tools">
 						<div className="ai-chat-reasoning-picker">
-							<ReasoningControl config={config} refreshKey={JSON.stringify([llmConfig, activeLLMProfileID, refreshKey, modelListState, modelSwitchState === 'switching'])} disabled={sending || modelSwitchState === 'switching'} onSaved={() => setConversations((current) => clearHermesSessionIDs(current))} />
+							<ReasoningControl config={config} refreshKey={JSON.stringify([llmConfig, activeLLMProfileID, refreshKey, modelListState, modelSwitchState === 'switching'])} disabled={sending || modelSwitchState === 'switching'} onSaved={() => setConversations((current) => clearAgentSessionIDs(current))} />
 						</div>
 						<div className={`ai-chat-model-picker ${modelListState} ${manualModelEditing ? 'manual' : ''}`} title={modelListMessage || '选择当前 AI 对话使用的模型'}>
 							<span>模型</span>
@@ -536,9 +549,9 @@ export function AIChatWorkspace({ config, refreshKey, initialPrompt, initialAnal
 							)}
 						</div>
 						<button type="button" className={`ai-chat-model-refresh ${modelListState}`} onClick={() => void refreshModels()} disabled={!config || !llmConfig || sending || modelSwitchState === 'switching' || modelListState === 'loading'} title={modelListState === 'error' ? `模型列表获取失败：${modelListMessage}` : '刷新模型列表'}>{modelListState === 'loading' ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}</button>
-						<button type="button" className="ai-chat-settings-button" onClick={onOpenSettings}><Settings size={15} />Hermes 设置</button>
+						<button type="button" className="ai-chat-settings-button" onClick={onOpenSettings}><Settings size={15} />Agent 设置</button>
 					</div>
-					{modelState !== 'ready' && <button type="button" className="ai-configure-hint" onClick={onOpenSettings}><Settings size={14} />{modelState === 'error' ? 'Hermes 运行时不可用，查看系统设置' : '尚未配置 Hermes 模型，打开系统设置'}</button>}
+					{modelState !== 'ready' && <button type="button" className="ai-configure-hint" onClick={onOpenSettings}><Settings size={14} />{modelState === 'error' ? 'Agent 运行时不可用，查看系统设置' : '尚未配置 Agent 模型，打开系统设置'}</button>}
 				</form>
 			</div>
 		</section>

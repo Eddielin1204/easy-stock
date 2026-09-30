@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/appsettings"
 	"easy-stock/backend/internal/foundation"
-	"easy-stock/backend/internal/hermes"
 	"easy-stock/backend/internal/marketemotion"
 	"easy-stock/backend/internal/methodology"
 	"easy-stock/backend/internal/portfolioinspection"
@@ -73,8 +73,8 @@ type Server struct {
 	settingsStore         *appsettings.Store
 	reviewAutomation      *review.Automation
 	remoteDailySync       *review.RemoteDailySync
-	hermesGateway         hermes.Gateway
-	usageGateway          hermes.Gateway
+	agentGateway          agent.Gateway
+	usageGateway          agent.Gateway
 	masteryLibrary        *methodology.Library
 	marketEmotionStore    *marketemotion.Store
 	themeRadarStore       *duanxianxia.Store
@@ -237,7 +237,7 @@ func NewServer(config any) *Server {
 	if cfg.FuturesPosition == nil {
 		cfg.FuturesPosition = futurespositionprovider.NewClient()
 	}
-	if cfg.HermesGateway != nil && (!cfg.StrictPersistence || len(startupErrors) == 0) {
+	if cfg.AgentGateway != nil && (!cfg.StrictPersistence || len(startupErrors) == 0) {
 		values := cfg.SettingsStore.Snapshot()
 		var migratedKey *string
 		if strings.TrimSpace(values.LLM.APIKey) != "" {
@@ -250,18 +250,21 @@ func NewServer(config any) *Server {
 				values = updated
 			}
 		}
-		if profileGateway, ok := cfg.HermesGateway.(hermes.ProfileGateway); ok {
+		if profileGateway, ok := cfg.AgentGateway.(agent.ProfileGateway); ok {
 			if migratedKey == nil {
-				if key, err := cfg.HermesGateway.ModelAPIKey(); err == nil && strings.TrimSpace(key) != "" {
+				if key, err := cfg.AgentGateway.ModelAPIKey(); err == nil && strings.TrimSpace(key) != "" {
 					migratedKey = &key
 				}
 			}
 			_ = profileGateway.SyncLLMProfile(values.LLM, values.ActiveLLMProfileID, migratedKey)
 		} else {
-			_ = cfg.HermesGateway.SyncLLM(values.LLM, migratedKey)
+			_ = cfg.AgentGateway.SyncLLM(values.LLM, migratedKey)
 		}
 	}
-	usageGateway := newTokenUsageGateway(cfg.HermesGateway, tokenUsage)
+	usageGateway := newTokenUsageGateway(cfg.AgentGateway, tokenUsage)
+	if service, ok := cfg.AgentGateway.(*agent.Service); ok {
+		service.RestoreSelection(cfg.SettingsStore.Snapshot().AgentRuntime)
+	}
 	if cfg.ReviewImporter == nil {
 		cfg.ReviewImporter = review.NewImporter(cfg.ReviewHTTP, cfg.WeChatAPIURL)
 	}
@@ -313,7 +316,7 @@ func NewServer(config any) *Server {
 		ladderThemeAI:         newLadderThemeAI(cfg.SettingsPath),
 		reviewAutomation:      cfg.ReviewAutomation,
 		remoteDailySync:       cfg.RemoteDailySync,
-		hermesGateway:         cfg.HermesGateway,
+		agentGateway:          cfg.AgentGateway,
 		usageGateway:          usageGateway,
 		masteryLibrary:        cfg.MasteryLibrary,
 		marketEmotionStore:    cfg.MarketEmotionStore,
@@ -568,6 +571,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/settings/agent/skills/market", s.settingsAgentSkillMarket)
 	s.mux.HandleFunc("GET /api/v1/settings/agent/skills/market/sources", s.settingsAgentSkillMarketSources)
 	s.mux.HandleFunc("POST /api/v1/settings/llm/models", s.settingsLLMModels)
+	s.mux.HandleFunc("POST /api/v1/settings/llm/api-key/reveal", s.settingsLLMAPIKeyReveal)
 	s.mux.HandleFunc("POST /api/v1/settings/llm/test", s.settingsLLMTest)
 	s.mux.HandleFunc("GET /api/v1/ai/ws", s.aiChatWebSocket)
 	s.mux.HandleFunc("POST /api/v1/strategy/inflections/evaluate", s.inflectionEvaluate)

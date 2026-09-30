@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/foundation"
-	"easy-stock/backend/internal/hermes"
 )
 
 func researchFixture(t *testing.T) (Analysis, ResearchSnapshot) {
@@ -387,18 +387,18 @@ func TestResearchStalePricesAndOpinionsCannotCreateConfidentPlan(t *testing.T) {
 
 type researchTestPrompter struct {
 	calls   int
-	options []hermes.PromptOptions
+	options []agent.PromptOptions
 	respond func(int, string) (string, error)
 }
 
-func (p *researchTestPrompter) Prompt(ctx context.Context, prompt string) (hermes.PromptResult, error) {
-	return p.PromptWithOptions(ctx, prompt, hermes.PromptOptions{})
+func (p *researchTestPrompter) Prompt(ctx context.Context, prompt string) (agent.PromptResult, error) {
+	return p.PromptWithOptions(ctx, prompt, agent.PromptOptions{})
 }
-func (p *researchTestPrompter) PromptWithOptions(_ context.Context, prompt string, options hermes.PromptOptions) (hermes.PromptResult, error) {
+func (p *researchTestPrompter) PromptWithOptions(_ context.Context, prompt string, options agent.PromptOptions) (agent.PromptResult, error) {
 	p.calls++
 	p.options = append(p.options, options)
 	text, err := p.respond(p.calls, prompt)
-	return hermes.PromptResult{Content: text}, err
+	return agent.PromptResult{Content: text}, err
 }
 
 func TestQuickResearchSucceedsAfterUniqueSourceIDRepair(t *testing.T) {

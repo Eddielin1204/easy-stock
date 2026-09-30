@@ -11,14 +11,14 @@ import (
 	"testing"
 	"time"
 
-	"easy-stock/backend/internal/hermes"
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/methodology"
 	"github.com/gorilla/websocket"
 )
 
 func TestAIChatRelaysHermesJSONRPCOverWebSocket(t *testing.T) {
-	gateway := &fakeHermesGateway{status: hermes.Status{Available: true, Configured: true, APIKeyConfigured: true}}
-	httpServer := httptest.NewServer(NewServer(Config{HermesGateway: gateway}))
+	gateway := &fakeAgentGateway{status: agent.Status{Available: true, Configured: true, APIKeyConfigured: true}}
+	httpServer := httptest.NewServer(NewServer(Config{AgentGateway: gateway}))
 	defer httpServer.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/api/v1/ai/ws"
@@ -92,7 +92,7 @@ func TestEnrichHermesPromptInjectsMatchingMasteryContext(t *testing.T) {
 }
 
 func TestAIChatRequiresAvailableHermesRuntime(t *testing.T) {
-	server := NewServer(Config{HermesGateway: &fakeHermesGateway{status: hermes.Status{Message: "Hermes 运行时不可用"}}})
+	server := NewServer(Config{AgentGateway: &fakeAgentGateway{status: agent.Status{Message: "Hermes 运行时不可用"}}})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/ai/ws", nil)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)

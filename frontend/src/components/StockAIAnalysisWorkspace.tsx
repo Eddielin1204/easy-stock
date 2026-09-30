@@ -931,7 +931,7 @@ function NewsAnalysisPanel({ eyebrow, title, item, icon }: { eyebrow: string; ti
 		<header><div><span>{eyebrow}</span><h3>{title}</h3></div>{icon}</header>
 		{item ? <>
 			<div className="stock-ai-news-summary">
-				<div><strong>{item.article_count} 条</strong><span>{item.source_count} 个来源 · 近{item.window_days || 30}日</span><em className={newsToneClass(item.tone)}>{item.tone || '信息不足'}</em><small>{item.analysis_source === 'hermes-ai' ? 'Hermes AI 归纳' : '本地规则归纳'}</small></div>
+				<div><strong>{item.article_count} 条</strong><span>{item.source_count} 个来源 · 近{item.window_days || 30}日</span><em className={newsToneClass(item.tone)}>{item.tone || '信息不足'}</em><small>{item.analysis_source === 'hermes-ai' ? 'Agent AI 归纳' : '本地规则归纳'}</small></div>
 				{item.keywords?.length > 0 && <div className="stock-ai-news-keywords">{item.keywords.map((keyword) => <span key={keyword}>{keyword}</span>)}</div>}
 				<p>{item.summary}</p>
 			</div>

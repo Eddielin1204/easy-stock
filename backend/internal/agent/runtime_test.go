@@ -1,4 +1,4 @@
-package hermes
+package agent
 
 import (
 	"os"
@@ -22,7 +22,7 @@ func TestRuntimeSyncLLMWritesHermesConfigAndKeepsSecretInEnv(t *testing.T) {
 		t.Fatal(err)
 	}
 	home := filepath.Join(root, "hermes-home")
-	runtime := NewRuntime(Config{RuntimeRoot: root, Home: home, WorkDir: root, PythonPath: python})
+	runtime := NewHermesRuntime(HermesConfig{RuntimeRoot: root, Home: home, WorkDir: root, PythonPath: python})
 	key := "sk-hermes-private"
 	if err := runtime.SyncLLM(appsettings.LLM{Provider: "deepseek", BaseURL: "https://api.deepseek.com", Model: "deepseek-v4-pro", APIMode: "chat_completions"}, &key); err != nil {
 		t.Fatal(err)
@@ -119,7 +119,7 @@ func TestRuntimeAgentSettingsPreservesSecretsAndModelConfig(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: test-skill\ndescription: test description\n---\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	runtime := NewRuntime(Config{Home: home, WorkDir: root, PythonPath: filepath.Join(root, "python")})
+	runtime := NewHermesRuntime(HermesConfig{Home: home, WorkDir: root, PythonPath: filepath.Join(root, "python")})
 	key := "model-secret"
 	if err := runtime.SyncLLM(appsettings.LLM{Provider: "openai", BaseURL: "https://api.openai.com/v1", Model: "gpt-5.5"}, &key); err != nil {
 		t.Fatal(err)
@@ -176,7 +176,7 @@ func TestRuntimeAgentSettingsPreservesSecretsAndModelConfig(t *testing.T) {
 }
 
 func TestRuntimeSyncAgentSettingsRejectsInvalidReasoningEffort(t *testing.T) {
-	runtime := NewRuntime(Config{Home: t.TempDir()})
+	runtime := NewHermesRuntime(HermesConfig{Home: t.TempDir()})
 	err := runtime.SyncAgentSettings(AgentSettings{ReasoningEffort: "turbo"})
 	if err == nil || !strings.Contains(err.Error(), "思考等级") {
 		t.Fatalf("SyncAgentSettings() error = %v, want invalid reasoning effort", err)
@@ -187,7 +187,7 @@ func TestRuntimeSyncLLMRetainsAndClearsExistingKey(t *testing.T) {
 	root := t.TempDir()
 	python := filepath.Join(root, "python")
 	_ = os.WriteFile(python, []byte("test"), 0o700)
-	runtime := NewRuntime(Config{Home: filepath.Join(root, "home"), PythonPath: python})
+	runtime := NewHermesRuntime(HermesConfig{Home: filepath.Join(root, "home"), PythonPath: python})
 	key := "first-key"
 	cfg := appsettings.LLM{Provider: "openai", BaseURL: "https://api.openai.com/v1", Model: "gpt-test"}
 	if err := runtime.SyncLLM(cfg, &key); err != nil {
@@ -219,7 +219,7 @@ func TestRuntimeProcessEnvironmentUsesHermesEnvInsteadOfAmbientKey(t *testing.T)
 		t.Fatal(err)
 	}
 	t.Setenv(modelAPIKeyEnvName, "ambient-shell-key")
-	runtime := NewRuntime(Config{Home: home, WorkDir: root, PythonPath: filepath.Join(root, "python")})
+	runtime := NewHermesRuntime(HermesConfig{Home: home, WorkDir: root, PythonPath: filepath.Join(root, "python")})
 
 	values, err := runtime.processEnvironment("", promptProcessOptions{})
 	if err != nil {
@@ -257,7 +257,7 @@ func TestRuntimeProcessEnvironmentUsesBrowserStateWithoutConflictingProfile(t *t
 	if err := os.WriteFile(statePath, []byte(`{"cookies":[],"origins":[]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	runtime := NewRuntime(Config{Home: home, WorkDir: root, PythonPath: filepath.Join(root, "python")})
+	runtime := NewHermesRuntime(HermesConfig{Home: home, WorkDir: root, PythonPath: filepath.Join(root, "python")})
 
 	values, err := runtime.processEnvironment(statePath, promptProcessOptions{})
 	if err != nil {
@@ -340,7 +340,7 @@ func TestHermesFailureIncludesRuntimeDetailAndRedactsSecrets(t *testing.T) {
 	if err := writeEnvValue(filepath.Join(home, ".env"), modelAPIKeyEnvName, key); err != nil {
 		t.Fatal(err)
 	}
-	runtime := NewRuntime(Config{Home: home})
+	runtime := NewHermesRuntime(HermesConfig{Home: home})
 	err := runtime.hermesFailure("Hermes 会话意外结束", "Authorization: Bearer "+key+"\nMODEL_API_KEY="+key+"\npython runtime missing")
 	message := err.Error()
 	if strings.Contains(message, key) {

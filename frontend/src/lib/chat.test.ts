@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chatModelKey, clearHermesSessionIDs, deriveChatTitle, parseStoredConversations, resumableHermesSessionID, storeableConversations, type ChatConversation } from './chat';
+import { createChatConversation, chatModelKey, clearAgentSessionIDs, deriveChatTitle, parseStoredConversations, resumableAgentSessionID, storeableConversations, type ChatConversation } from './chat';
 
 describe('AI chat history helpers', () => {
 	it('restores saved reasoning while continuing to accept older messages', () => {
@@ -33,42 +33,54 @@ describe('AI chat history helpers', () => {
 		expect(storeableConversations(values)).toHaveLength(30);
 	});
 
-	it('clears Hermes sessions after changing the global chat model without removing messages', () => {
+	it('clears Agent sessions after changing the global chat model without removing messages', () => {
 		const current = conversation('current', '2026-08-07T00:00:00.000Z');
-		current.hermes_session_id = 'hermes-old-model';
+		current.agent_session_id = 'agent-old-model';
 		current.analysis_id = 'saved-report';
-		current.hermes_model_key = 'old-model-key';
+		current.agent_model_key = 'old-model-key';
 		current.messages = [{ id: 'message-1', role: 'user', content: '保留这条消息', created_at: current.created_at }];
 
-		const [next] = clearHermesSessionIDs([current]);
+		const [next] = clearAgentSessionIDs([current]);
 
-		expect(next.hermes_session_id).toBeUndefined();
-		expect(next.hermes_model_key).toBeUndefined();
+		expect(next.agent_session_id).toBeUndefined();
+		expect(next.agent_model_key).toBeUndefined();
 		expect(next.messages).toEqual(current.messages);
 		expect(next.analysis_id).toBe('saved-report');
 		expect(parseStoredConversations(JSON.stringify([next]))[0].analysis_id).toBe('saved-report');
 	});
 
-	it('only resumes a Hermes session created for the active model configuration', () => {
+	it('only resumes a Agent session created for the active model configuration', () => {
 		const current = conversation('current', '2026-09-08T00:00:00.000Z');
 		const deepSeekKey = chatModelKey({ provider: 'deepseek', base_url: 'https://api.deepseek.com/', model: 'deepseek-v4-flash', api_mode: 'codex_responses' }, 'deepseek-profile');
 		const lunaKey = chatModelKey({ provider: 'custom', base_url: 'https://dutifly.com/sub2api/v1', model: 'gpt-5.6-luna', api_mode: 'codex_responses' }, 'luna-profile');
-		current.hermes_session_id = 'hermes-luna-session';
-		current.hermes_model_key = lunaKey;
+		current.agent_session_id = 'agent-luna-session';
+		current.agent_model_key = lunaKey;
 
-		expect(resumableHermesSessionID(current, deepSeekKey)).toBeUndefined();
-		expect(resumableHermesSessionID(current, lunaKey)).toBe('hermes-luna-session');
+		expect(resumableAgentSessionID(current, deepSeekKey)).toBeUndefined();
+		expect(resumableAgentSessionID(current, lunaKey)).toBe('agent-luna-session');
 	});
 
 	it('does not resume legacy sessions that have no model configuration marker', () => {
 		const current = conversation('legacy', '2026-09-08T00:00:00.000Z');
-		current.hermes_session_id = 'hermes-legacy-session';
+		current.agent_session_id = 'agent-legacy-session';
 		const modelKey = chatModelKey({ provider: 'deepseek', base_url: 'https://api.deepseek.com', model: 'deepseek-v4-flash', api_mode: 'codex_responses' });
 
-		expect(resumableHermesSessionID(current, modelKey)).toBeUndefined();
+		expect(resumableAgentSessionID(current, modelKey)).toBeUndefined();
 	});
 });
 
 function conversation(id: string, updatedAt: string): ChatConversation {
 	return { id, title: id, messages: [], created_at: updatedAt, updated_at: updatedAt };
 }
+
+it('migrates legacy Hermes bindings and preserves history across runtime switches', () => {
+  const config = { provider: 'openai', base_url: 'https://example.com/v1', model: 'test', api_mode: 'responses' };
+  const legacyKey = JSON.stringify({ profile_id: '', ...config });
+  const conversation = createChatConversation();
+  conversation.messages = [{ id: 'm', role: 'user', content: 'existing history', created_at: conversation.created_at }];
+  const [migrated] = parseStoredConversations(JSON.stringify([{ ...conversation, hermes_session_id: 'native-old', hermes_model_key: legacyKey }]));
+  expect(resumableAgentSessionID(migrated, chatModelKey(config))).toBe('native-old');
+  expect(resumableAgentSessionID(migrated, chatModelKey(config, '', 'codex'))).toBeUndefined();
+  expect(migrated.messages[0].content).toBe('existing history');
+  expect(migrated.hermes_session_id).toBeUndefined();
+});

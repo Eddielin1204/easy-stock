@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/appsettings"
-	"easy-stock/backend/internal/hermes"
 )
 
 func TestSettingsAPIStoresSecretsWithoutReturningThem(t *testing.T) {
@@ -21,8 +21,8 @@ func TestSettingsAPIStoresSecretsWithoutReturningThem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open settings: %v", err)
 	}
-	gateway := &fakeHermesGateway{status: hermes.Status{Available: true}}
-	server := NewServer(Config{SettingsStore: store, HermesGateway: gateway})
+	gateway := &fakeAgentGateway{status: agent.Status{Available: true}}
+	server := NewServer(Config{SettingsStore: store, AgentGateway: gateway})
 	body := `{
 		"llm":{"provider":"deepseek","base_url":"https://api.deepseek.com","model":"deepseek-v4-pro","api_mode":"chat_completions","api_key":"sk-private-12345678"},
 		"credentials":{"tushare_token":"tushare-private-87654321"}
@@ -78,11 +78,11 @@ func TestSettingsLLMConnectionUsesSavedOpenAICompatibleConfig(t *testing.T) {
 		}
 		return nil
 	})
-	gateway := &fakeHermesGateway{
-		status:       hermes.Status{Available: true, Configured: true, APIKeyConfigured: true, Version: "0.21.3"},
-		promptResult: hermes.PromptResult{Content: llmProbeMarker},
+	gateway := &fakeAgentGateway{
+		status:       agent.Status{Available: true, Configured: true, APIKeyConfigured: true, Version: "0.21.3"},
+		promptResult: agent.PromptResult{Content: llmProbeMarker},
 	}
-	server := NewServer(Config{SettingsStore: store, HermesGateway: gateway})
+	server := NewServer(Config{SettingsStore: store, AgentGateway: gateway})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/settings/llm/test", nil)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -100,15 +100,15 @@ func TestSettingsLLMConnectionHidesProviderErrorBody(t *testing.T) {
 		values.LLM = appsettings.LLM{Provider: "custom", BaseURL: "https://model.example", Model: "gpt-test"}
 		return nil
 	})
-	gateway := &fakeHermesGateway{status: hermes.Status{Available: true, Configured: true}, promptErr: errors.New("provider authentication failed")}
-	server := NewServer(Config{SettingsStore: store, HermesGateway: gateway})
+	gateway := &fakeAgentGateway{status: agent.Status{Available: true, Configured: true}, promptErr: errors.New("provider authentication failed")}
+	server := NewServer(Config{SettingsStore: store, AgentGateway: gateway})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/settings/llm/test", nil)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d, want 502; body=%s", rec.Code, rec.Body.String())
 	}
-	if strings.Contains(rec.Body.String(), "secret-provider-detail") || !strings.Contains(rec.Body.String(), "Hermes") {
+	if strings.Contains(rec.Body.String(), "secret-provider-detail") || !strings.Contains(rec.Body.String(), "Agent") {
 		t.Fatalf("provider error was not safely categorized: %s", rec.Body.String())
 	}
 }
@@ -122,8 +122,8 @@ func TestSettingsAPIValidatesAndClearsSecrets(t *testing.T) {
 		values.LLM.APIKey = "secret"
 		return nil
 	})
-	gateway := &fakeHermesGateway{status: hermes.Status{Available: true, Configured: true, APIKeyConfigured: true}}
-	server := NewServer(Config{SettingsStore: store, HermesGateway: gateway})
+	gateway := &fakeAgentGateway{status: agent.Status{Available: true, Configured: true, APIKeyConfigured: true}}
+	server := NewServer(Config{SettingsStore: store, AgentGateway: gateway})
 
 	badReq := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(`{"llm":{"base_url":"file:///tmp/key"}}`))
 	badRec := httptest.NewRecorder()
@@ -187,7 +187,7 @@ func TestSettingsAPIAcceptsAdditionalLLMProviders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := NewServer(Config{SettingsStore: store, HermesGateway: &fakeHermesGateway{status: hermes.Status{Available: true}}})
+	server := NewServer(Config{SettingsStore: store, AgentGateway: &fakeAgentGateway{status: agent.Status{Available: true}}})
 	providers := []struct {
 		provider string
 		baseURL  string
@@ -224,8 +224,8 @@ func TestSettingsAPISupportsMultipleLLMProfilesAndSelection(t *testing.T) {
 	if err := os.WriteFile(python, []byte("test"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	runtime := hermes.NewRuntime(hermes.Config{Home: filepath.Join(root, "hermes"), PythonPath: python})
-	server := NewServer(Config{SettingsStore: store, HermesGateway: runtime})
+	runtime := agent.NewHermesRuntime(agent.HermesConfig{Home: filepath.Join(root, "hermes"), PythonPath: python})
+	server := NewServer(Config{SettingsStore: store, AgentGateway: runtime})
 	body := `{"llm_profiles":[
 		{"id":"deepseek","name":"DeepSeek","provider":"deepseek","base_url":"https://api.deepseek.com","model":"deepseek-v4-pro","api_mode":"chat_completions","api_key":"ds-private"},
 		{"id":"sol","name":"GPT-5.6 Sol","provider":"custom","base_url":"https://model.example/v1","model":"gpt-5.6-sol","api_mode":"codex_responses","api_key":"sol-private"}
@@ -263,7 +263,7 @@ func TestSettingsAPIStoresResponseTimeoutAndPreservesItWhenSwitchingProfiles(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := NewServer(Config{SettingsStore: store, HermesGateway: &fakeHermesGateway{status: hermes.Status{Available: true}}})
+	server := NewServer(Config{SettingsStore: store, AgentGateway: &fakeAgentGateway{status: agent.Status{Available: true}}})
 	body := `{"llm":{"response_timeout_seconds":600},"llm_profiles":[
 		{"id":"one","name":"模型一","provider":"custom","base_url":"https://model.example/v1","model":"model-one","api_mode":"chat_completions"},
 		{"id":"two","name":"模型二","provider":"custom","base_url":"https://model.example/v1","model":"model-two","api_mode":"chat_completions"}

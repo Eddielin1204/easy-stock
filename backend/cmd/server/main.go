@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"easy-stock/backend/internal/hermes"
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/httpapi"
 	"easy-stock/backend/internal/methodology"
 	"easy-stock/backend/internal/runtimelog"
@@ -75,12 +75,20 @@ func main() {
 	if hermesWorkDir == "" {
 		hermesWorkDir, _ = os.Getwd()
 	}
-	hermesGateway := hermes.NewRuntime(hermes.Config{
+	codexHome := os.Getenv("A_STOCK_CODEX_HOME")
+	if codexHome == "" {
+		codexHome = dataPath(dataDir, "codex-home")
+	}
+	codexRoot := os.Getenv("A_STOCK_CODEX_RUNTIME_ROOT")
+	if codexRoot == "" {
+		codexRoot = filepath.Join(filepath.Dir(resolveHermesRuntimeRoot()), "codex-runtime")
+	}
+	agentGateway := agent.NewService(agent.ServiceConfig{Hermes: agent.HermesConfig{
 		RuntimeRoot: resolveHermesRuntimeRoot(),
 		Home:        hermesHome,
 		WorkDir:     hermesWorkDir,
 		PythonPath:  os.Getenv("A_STOCK_HERMES_PYTHON"),
-	})
+	}, Codex: agent.CodexConfig{RuntimeRoot: codexRoot, Home: codexHome, WorkDir: filepath.Join(codexHome, "workspace")}})
 	masteryLibrary := methodology.NewLibrary(methodology.Config{
 		CacheDir:   masteryCacheDir,
 		HermesHome: hermesHome,
@@ -96,7 +104,7 @@ func main() {
 		DuanxianxiaBaseURL:   os.Getenv("A_STOCK_DUANXIANXIA_BASE_URL"),
 		WeChatAPIURL:         os.Getenv("A_STOCK_WECHAT_API_URL"),
 		SettingsPath:         settingsPath,
-		HermesGateway:        hermesGateway,
+		AgentGateway:         agentGateway,
 		MasteryLibrary:       masteryLibrary,
 		Logger:               log.Default(),
 		StrictPersistence:    true,

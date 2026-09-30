@@ -19,8 +19,8 @@ import (
 	"sync"
 	"time"
 
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/appsettings"
-	"easy-stock/backend/internal/hermes"
 	"easy-stock/backend/internal/runtimelog"
 )
 
@@ -35,7 +35,7 @@ type Automation struct {
 	importer               URLImporter
 	settings               *appsettings.Store
 	httpClient             *http.Client
-	prompter               hermes.Prompter
+	prompter               agent.Prompter
 	fallbackWechat         string
 	browserStateDir        string
 	browserBridgeURL       string
@@ -59,11 +59,11 @@ func (a *Automation) SetDailyMarketProvider(provider DailyMarketProvider) {
 	a.dailyMarketProvider = provider
 }
 
-func NewAutomation(store *Store, importer URLImporter, settings *appsettings.Store, httpClient *http.Client, fallbackWechat string, prompters ...hermes.Prompter) *Automation {
+func NewAutomation(store *Store, importer URLImporter, settings *appsettings.Store, httpClient *http.Client, fallbackWechat string, prompters ...agent.Prompter) *Automation {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 25 * time.Second}
 	}
-	var prompter hermes.Prompter
+	var prompter agent.Prompter
 	if len(prompters) > 0 {
 		prompter = prompters[0]
 	}
@@ -165,6 +165,11 @@ func (a *Automation) SyncOne(ctx context.Context, id string) SyncResult {
 }
 
 func (a *Automation) syncOneUnlocked(ctx context.Context, sub Subscription) SyncResult {
+	ctx, release, bindErr := agent.BindTask(ctx, a.prompter)
+	if bindErr != nil {
+		return SyncResult{SubscriptionID: sub.ID, Error: bindErr.Error()}
+	}
+	defer release()
 	result := SyncResult{SubscriptionID: sub.ID}
 	profile, profileErr := a.profileFor(sub.Source, sub.ConfigID)
 	if profileErr != nil {
@@ -500,7 +505,7 @@ func (a *Automation) normalizeBrowserBridgeCollection(ctx context.Context, sub S
 		return raw, nil
 	}
 	prompt := "你是" + browserSourceLabel(sub.Source) + "文章整理代理。以下 JSON 来自用户已登录的内置 Electron 浏览器，字段均为实际页面读取结果。请整理最多5篇新文章的标题，把发布时间尽量转换为RFC3339；正文已保存在本地，content_text保持为空；不得新增链接、不得编造内容、不得输出Cookie。只返回严格JSON，结构保持不变：" + string(data) + "\n目标主页：" + sub.HomepageURL
-	response, err := hermes.PromptFullyAuthorized(hermes.WithUsageModule(ctx, "review-normalization"), a.prompter, prompt)
+	response, err := agent.PromptFullyAuthorized(agent.WithUsageModule(ctx, "review-normalization"), a.prompter, prompt)
 	if err != nil {
 		return raw, nil
 	}
@@ -550,11 +555,11 @@ func (a *Automation) collectWithBrowserState(ctx context.Context, sub Subscripti
 		domainRule = "tgb.cn 或 taoguba.com.cn"
 	}
 	prompt := "你是网页采集代理。请使用 browser_navigate、browser_snapshot、browser_click 等浏览器工具访问下面的" + browserSourceLabel(sub.Source) + "用户主页；浏览器已由应用加载用户亲自登录后的本地会话。采集最近最多5篇文章。不得依靠训练记忆，不得编造内容，不要请求、读取或输出Cookie等登录凭据。只返回严格JSON，不要markdown：{\"author_name\":\"作者名\",\"external_id\":\"用户ID\",\"articles\":[{\"title\":\"标题\",\"original_url\":\"" + articleExample + "\",\"content_text\":\"文章正文纯文本\",\"published_at\":\"RFC3339时间；无法确认则留空\"}],\"error\":\"无法采集时填写原因，否则留空\"}。每个文章链接必须是实际访问确认的" + domainRule + "原文，正文必须来自该链接。主页：" + sub.HomepageURL + "\n用户ID：" + uid
-	browserPrompter, ok := a.prompter.(hermes.BrowserStatePrompter)
+	browserPrompter, ok := a.prompter.(agent.BrowserStatePrompter)
 	if !ok {
 		return nil, "", "", errors.New("当前 Hermes 运行时不支持复用浏览器登录态")
 	}
-	response, err := hermes.PromptFullyAuthorizedWithBrowserState(hermes.WithUsageModule(ctx, "review-collection"), browserPrompter, prompt, statePath)
+	response, err := agent.PromptFullyAuthorizedWithBrowserState(agent.WithUsageModule(ctx, "review-collection"), browserPrompter, prompt, statePath)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -754,6 +759,11 @@ func (a *Automation) discoverHTML(ctx context.Context, sub Subscription, profile
 }
 
 func (a *Automation) AnalyzePost(ctx context.Context, id string) (Post, error) {
+	ctx, release, bindErr := agent.BindTask(ctx, a.prompter)
+	if bindErr != nil {
+		return Post{}, bindErr
+	}
+	defer release()
 	post, err := a.store.GetPost(ctx, id)
 	if err != nil {
 		return Post{}, err
@@ -969,9 +979,9 @@ type llmAnalysis struct {
 	Outlook   string   `json:"outlook"`
 }
 
-func analyzeWithHermes(ctx context.Context, prompter hermes.Prompter, post Post) (llmAnalysis, error) {
+func analyzeWithHermes(ctx context.Context, prompter agent.Prompter, post Post) (llmAnalysis, error) {
 	prompt := "你是谨慎的A股复盘研究助手，只提炼原作者观点，不编造投资建议。请分析下面的A股复盘文章。只返回严格JSON：{\"summary\":\"200字内摘要\",\"key_points\":[\"要点\"],\"outlook\":\"作者对下一交易日或后市的预期；没有则写未明确\"}。不要添加markdown。\n标题：" + post.Title + "\n作者：" + post.AuthorName + "\n正文：" + truncateRunes(post.ContentText, 12000)
-	response, err := hermes.PromptFullyAuthorized(hermes.WithUsageModule(ctx, "review-analysis"), prompter, prompt)
+	response, err := agent.PromptFullyAuthorized(agent.WithUsageModule(ctx, "review-analysis"), prompter, prompt)
 	if err != nil {
 		return llmAnalysis{}, fmt.Errorf("Hermes AI 提炼失败: %w", err)
 	}

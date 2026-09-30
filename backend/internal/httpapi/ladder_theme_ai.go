@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"easy-stock/backend/internal/hermes"
+	"easy-stock/backend/internal/agent"
 )
 
 const ladderThemeCooldown = 7 * 24 * time.Hour
@@ -208,12 +208,12 @@ func parseLadderThemeResult(content string) (*ladderThemeResult, error) {
 	}
 	return &result, nil
 }
-func (c *ladderThemeAI) run(input ladderThemeInput, prompter hermes.OptionsPrompter) {
+func (c *ladderThemeAI) run(input ladderThemeInput, prompter agent.OptionsPrompter) {
 	c.slots <- struct{}{}
 	defer func() { <-c.slots }()
-	ctx, cancel := context.WithTimeout(hermes.WithUsageModule(context.Background(), "ladder-theme-ai"), 90*time.Second)
+	ctx, cancel := context.WithTimeout(agent.WithUsageModule(context.Background(), "ladder-theme-ai"), 90*time.Second)
 	defer cancel()
-	response, err := prompter.PromptWithOptions(ctx, ladderThemePrompt(input), hermes.PromptOptions{Sandbox: true, AutoApprove: true, Toolsets: []string{"web"}})
+	response, err := prompter.PromptWithOptions(ctx, ladderThemePrompt(input), agent.PromptOptions{Sandbox: true, AutoApprove: true, Toolsets: []string{"web"}})
 	var result *ladderThemeResult
 	validationError := ""
 	if err == nil {
@@ -279,13 +279,13 @@ func (s *Server) ladderThemeAIIdentify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Fail closed: require the isolated, web-only runtime.
-	_, nativeOK := s.hermesGateway.(hermes.OptionsPrompter)
-	prompter, ok := s.usageGateway.(hermes.OptionsPrompter)
+	_, nativeOK := s.agentGateway.(agent.OptionsPrompter)
+	prompter, ok := s.usageGateway.(agent.OptionsPrompter)
 	if !ok || !nativeOK {
 		writeError(w, 503, "隔离网页检索不可用，请先配置大模型")
 		return
 	}
-	if s.hermesGateway == nil || !s.hermesGateway.Status().Configured {
+	if s.agentGateway == nil || !s.agentGateway.Status().Configured {
 		writeError(w, 503, "请先配置大模型")
 		return
 	}

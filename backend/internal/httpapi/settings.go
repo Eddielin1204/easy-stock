@@ -2,14 +2,15 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/appsettings"
-	"easy-stock/backend/internal/hermes"
 )
 
 type secretSettingStatus struct {
@@ -18,9 +19,12 @@ type secretSettingStatus struct {
 }
 
 type settingsView struct {
-	Hermes             hermes.Status    `json:"hermes"`
-	ActiveLLMProfileID string           `json:"active_llm_profile_id"`
-	LLMProfiles        []llmProfileView `json:"llm_profiles"`
+	AgentRuntime       string                  `json:"agent_runtime"`
+	Agent              agent.Status            `json:"agent"`
+	Runtimes           map[string]agent.Status `json:"runtimes"`
+	Hermes             agent.Status            `json:"hermes"`
+	ActiveLLMProfileID string                  `json:"active_llm_profile_id"`
+	LLMProfiles        []llmProfileView        `json:"llm_profiles"`
 	LLM                struct {
 		Provider               string              `json:"provider"`
 		BaseURL                string              `json:"base_url"`
@@ -87,6 +91,7 @@ type reviewSourceProfileUpdate struct {
 }
 
 type settingsUpdateRequest struct {
+	AgentRuntime       *string             `json:"agent_runtime"`
 	LLMProfiles        *[]llmProfileUpdate `json:"llm_profiles"`
 	ActiveLLMProfileID *string             `json:"active_llm_profile_id"`
 	LLM                struct {
@@ -156,11 +161,15 @@ func (s *Server) settingsUpdate(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	if (llmAPIKeyUpdate != nil || len(profileKeyUpdates) > 0) && s.hermesGateway == nil {
+	if (llmAPIKeyUpdate != nil || len(profileKeyUpdates) > 0) && s.agentGateway == nil {
 		writeError(w, http.StatusServiceUnavailable, "Hermes 配置服务不可用")
 		return
 	}
-	values, err := s.settingsStore.Update(func(values *appsettings.Values) error {
+	values, err := s.settingsStore.UpdatePrepared(func(values *appsettings.Values) error {
+		previousModel, previousRuntime := values.LLM, values.AgentRuntime
+		if request.AgentRuntime != nil {
+			values.AgentRuntime = *request.AgentRuntime
+		}
 		if request.LLMProfiles != nil {
 			existingConfigured := map[string]bool{}
 			for _, profile := range values.LLMProfiles {
@@ -243,40 +252,90 @@ func (s *Server) settingsUpdate(w http.ResponseWriter, r *http.Request) {
 			}
 			values.ReviewAutomation.Profiles = profiles
 		}
-		return nil
-	})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "save settings: "+err.Error())
-		return
-	}
-	if s.hermesGateway != nil {
-		profileGateway, supportsProfiles := s.hermesGateway.(hermes.ProfileGateway)
-		if supportsProfiles {
-			for id, update := range profileKeyUpdates {
-				if id != values.ActiveLLMProfileID {
-					if err := profileGateway.StoreLLMProfileKey(id, update); err != nil {
-						writeError(w, http.StatusInternalServerError, "保存模型配置密钥: "+err.Error())
-						return
-					}
+		modelChanged := previousModel.Provider != values.LLM.Provider || previousModel.BaseURL != values.LLM.BaseURL || previousModel.Model != values.LLM.Model || profileKeyUpdates[values.ActiveLLMProfileID] != nil || llmAPIKeyUpdate != nil
+		if (values.LLM.APIMode == "auto" || (agent.RuntimeID(values.AgentRuntime) == agent.Codex && (!agent.SupportsResponses(values.LLM) || modelChanged || agent.RuntimeID(previousRuntime) != agent.Codex))) && strings.TrimSpace(values.LLM.Model) != "" && strings.TrimSpace(values.LLM.BaseURL) != "" {
+			key := ""
+			if profileGateway, ok := s.agentGateway.(agent.ProfileGateway); ok {
+				var err error
+				key, err = profileGateway.ModelAPIKeyForProfile(values.ActiveLLMProfileID)
+				if err != nil {
+					return err
+				}
+			} else if s.agentGateway != nil {
+				key, _ = s.agentGateway.ModelAPIKey()
+			}
+			if update, ok := profileKeyUpdates[values.ActiveLLMProfileID]; ok {
+				key = *update
+			} else if llmAPIKeyUpdate != nil {
+				key = *llmAPIKeyUpdate
+			}
+			supported, err := agent.ProbeResponses(r.Context(), values.LLM, key)
+			if err != nil {
+				return err
+			}
+			if supported {
+				values.LLM.APIMode = "codex_responses"
+			} else {
+				if agent.RuntimeID(values.AgentRuntime) == agent.Codex {
+					return agent.ErrModelProtocolUnsupported
+				}
+				if values.LLM.Provider == "anthropic" {
+					values.LLM.APIMode = "anthropic_messages"
+				} else {
+					values.LLM.APIMode = "chat_completions"
 				}
 			}
-			activeUpdate := profileKeyUpdates[values.ActiveLLMProfileID]
-			if activeUpdate == nil {
-				activeUpdate = llmAPIKeyUpdate
-			}
-			if err := profileGateway.SyncLLMProfile(values.LLM, values.ActiveLLMProfileID, activeUpdate); err != nil {
-				writeError(w, http.StatusInternalServerError, "同步 Hermes 设置: "+err.Error())
-				return
-			}
-		} else if err := s.hermesGateway.SyncLLM(values.LLM, llmAPIKeyUpdate); err != nil {
-			writeError(w, http.StatusInternalServerError, "同步 Hermes 设置: "+err.Error())
-			return
+			upsertActiveLLMProfile(values)
 		}
+		if service, ok := s.agentGateway.(*agent.Service); ok {
+			if err := service.ValidateSelection(values.AgentRuntime, values.LLM); err != nil {
+				return err
+			}
+		} else if agent.RuntimeID(values.AgentRuntime) != agent.Hermes {
+			return fmt.Errorf("Codex 运行时不可用")
+		}
+		return nil
+	}, func(values appsettings.Values) (func(bool) error, error) {
+		if service, ok := s.agentGateway.(*agent.Service); ok {
+			return service.PrepareSettings(values, profileKeyUpdates, llmAPIKeyUpdate)
+		}
+		if s.agentGateway != nil {
+			if profileGateway, ok := s.agentGateway.(agent.ProfileGateway); ok {
+				for id, key := range profileKeyUpdates {
+					if id != values.ActiveLLMProfileID {
+						if err := profileGateway.StoreLLMProfileKey(id, key); err != nil {
+							return nil, err
+						}
+					}
+				}
+				key := profileKeyUpdates[values.ActiveLLMProfileID]
+				if key == nil {
+					key = llmAPIKeyUpdate
+				}
+				if err := profileGateway.SyncLLMProfile(values.LLM, values.ActiveLLMProfileID, key); err != nil {
+					return nil, err
+				}
+			} else if err := s.agentGateway.SyncLLM(values.LLM, llmAPIKeyUpdate); err != nil {
+				return nil, err
+			}
+		}
+		return func(bool) error { return nil }, nil
+	})
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, agent.ErrModelProtocolUnsupported) || strings.Contains(err.Error(), "运行引擎") || strings.Contains(err.Error(), "运行时不可用") || errors.Is(err, agent.ErrProtocolUnconfirmed) {
+			status = http.StatusBadRequest
+		}
+		writeError(w, status, "保存设置: "+err.Error())
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": s.buildSettingsView(values)})
 }
 
 func validateSettingsUpdate(request settingsUpdateRequest) error {
+	if request.AgentRuntime != nil && *request.AgentRuntime != agent.Hermes && *request.AgentRuntime != agent.Codex {
+		return fmt.Errorf("不支持的运行引擎")
+	}
 	if request.LLMProfiles != nil {
 		if len(*request.LLMProfiles) == 0 || len(*request.LLMProfiles) > 20 {
 			return fmt.Errorf("模型配置数量必须在 1 到 20 之间")
@@ -339,7 +398,7 @@ func validateSingleLLM(request settingsUpdateRequest) error {
 	}
 	if request.LLM.APIMode != nil {
 		apiMode := strings.TrimSpace(*request.LLM.APIMode)
-		allowed := map[string]bool{"": true, "chat_completions": true, "responses": true, "codex_responses": true, "anthropic_messages": true}
+		allowed := map[string]bool{"": true, "auto": true, "chat_completions": true, "responses": true, "codex_responses": true, "anthropic_messages": true}
 		if !allowed[apiMode] {
 			return fmt.Errorf("unsupported llm api_mode: %s", apiMode)
 		}
@@ -401,8 +460,15 @@ func validateSingleLLM(request settingsUpdateRequest) error {
 
 func (s *Server) buildSettingsView(values appsettings.Values) settingsView {
 	view := settingsView{}
-	if s.hermesGateway != nil {
-		view.Hermes = s.hermesGateway.Status()
+	view.AgentRuntime = agent.RuntimeID(values.AgentRuntime)
+	if s.agentGateway != nil {
+		view.Agent = s.agentGateway.Status()
+		view.Hermes = view.Agent
+		view.Runtimes = map[string]agent.Status{agent.Hermes: view.Hermes}
+		if service, ok := s.agentGateway.(*agent.Service); ok {
+			view.Runtimes = service.RuntimeStatuses()
+			view.Hermes = view.Runtimes[agent.Hermes]
+		}
 	} else {
 		view.Hermes.Message = "Hermes 配置服务不可用"
 	}
@@ -431,7 +497,7 @@ func (s *Server) buildSettingsView(values appsettings.Values) settingsView {
 	view.LLM.APIKey.Configured = view.Hermes.APIKeyConfigured
 	view.ActiveLLMProfileID = values.ActiveLLMProfileID
 	view.LLMProfiles = make([]llmProfileView, 0, len(values.LLMProfiles))
-	profileGateway, _ := s.hermesGateway.(hermes.ProfileGateway)
+	profileGateway, _ := s.agentGateway.(agent.ProfileGateway)
 	for _, profile := range values.LLMProfiles {
 		configured := profile.APIKeyConfigured
 		if profile.ID == values.ActiveLLMProfileID {

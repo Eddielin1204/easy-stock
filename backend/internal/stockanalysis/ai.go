@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"easy-stock/backend/internal/hermes"
+	"easy-stock/backend/internal/agent"
 )
 
 type aiConclusion struct {
@@ -118,7 +118,7 @@ type aiDailyKLineSegment struct {
 	AverageTurnover float64 `json:"average_turnover_percent,omitempty"`
 }
 
-func EnrichWithAI(ctx context.Context, prompter hermes.Prompter, analysis *Analysis, methodologyContext string) error {
+func EnrichWithAI(ctx context.Context, prompter agent.Prompter, analysis *Analysis, methodologyContext string) error {
 	if prompter == nil || analysis == nil {
 		return errors.New("AI分析底座不可用")
 	}
@@ -685,11 +685,11 @@ type promptJSONAttempt struct {
 	err           string
 }
 
-func promptJSONObject[T any](ctx context.Context, prompter hermes.Prompter, prompt, label string) (T, error) {
+func promptJSONObject[T any](ctx context.Context, prompter agent.Prompter, prompt, label string) (T, error) {
 	return promptJSONObjectWithOptions[T](ctx, prompter, prompt, label, promptJSONObjectOptions{maxAttempts: 2, disableTools: true})
 }
 
-func promptJSONObjectWithOptions[T any](ctx context.Context, prompter hermes.Prompter, prompt, label string, options promptJSONObjectOptions) (T, error) {
+func promptJSONObjectWithOptions[T any](ctx context.Context, prompter agent.Prompter, prompt, label string, options promptJSONObjectOptions) (T, error) {
 	var decoded T
 	if options.maxAttempts <= 0 {
 		options.maxAttempts = 1
@@ -698,7 +698,7 @@ func promptJSONObjectWithOptions[T any](ctx context.Context, prompter hermes.Pro
 	var firstDecodeErr error
 	for attempt := 1; attempt <= options.maxAttempts; attempt++ {
 		startedAt := time.Now()
-		result, callErr := hermes.PromptUsingOptions(ctx, prompter, attemptPrompt, hermes.PromptOptions{
+		result, callErr := agent.PromptUsingOptions(ctx, prompter, attemptPrompt, agent.PromptOptions{
 			Sandbox: true, AutoApprove: true, DisableTools: options.disableTools,
 		})
 		diagnostic := promptJSONAttempt{

@@ -9,20 +9,20 @@ import (
 	"testing"
 	"time"
 
-	"easy-stock/backend/internal/hermes"
+	"easy-stock/backend/internal/agent"
 )
 
 func TestPortfolioInspectionRunsInBackgroundAndReturnsReport(t *testing.T) {
-	gateway := &fakeHermesGateway{
-		status:       hermes.Status{Available: true, Configured: true},
-		promptResult: hermes.PromptResult{Content: `{"health_score":1,"risk_level":"极高","style_match":"明显偏离","executive_summary":"组合结构总体可控，继续按确认与失效条件管理持仓。","primary_risks":[],"concentration_findings":[],"holdings":[{"symbol":"600519.SH","portfolio_role":"核心","risk_contribution":100,"conclusion":"趋势结构稳定","action_priority":"保持","action":"满足趋势条件时持有","confirmation":"趋势延续","invalidation":"跌破止损"}],"adjustment_order":[],"scenarios":[],"next_checklist":[],"data_limitations":[],"confidence":0.8}`},
+	gateway := &fakeAgentGateway{
+		status:       agent.Status{Available: true, Configured: true},
+		promptResult: agent.PromptResult{Content: `{"health_score":1,"risk_level":"极高","style_match":"明显偏离","executive_summary":"组合结构总体可控，继续按确认与失效条件管理持仓。","primary_risks":[],"concentration_findings":[],"holdings":[{"symbol":"600519.SH","portfolio_role":"核心","risk_contribution":100,"conclusion":"趋势结构稳定","action_priority":"保持","action":"满足趋势条件时持有","confirmation":"趋势延续","invalidation":"跌破止损"}],"adjustment_order":[],"scenarios":[],"next_checklist":[],"data_limitations":[],"confidence":0.8}`},
 	}
-	gateway.promptFunc = func(_ context.Context, prompt string) (hermes.PromptResult, error) {
+	gateway.promptFunc = func(_ context.Context, prompt string) (agent.PromptResult, error) {
 		if strings.Contains(prompt, "独立提出需要核实的问题") {
-			return hermes.PromptResult{Content: `{"questions":[]}`}, nil
+			return agent.PromptResult{Content: `{"questions":[]}`}, nil
 		}
 		if strings.Contains(prompt, "你是A股研究决策器") {
-			return hermes.PromptResult{Content: validHTTPResearchJSON}, nil
+			return agent.PromptResult{Content: validHTTPResearchJSON}, nil
 		}
 		return gateway.promptResult, nil
 	}
@@ -30,7 +30,7 @@ func TestPortfolioInspectionRunsInBackgroundAndReturnsReport(t *testing.T) {
 		Realtime: stockAnalysisRealtime{}, KLinePrimary: stockAnalysisKLines{}, KLineFallback: stockAnalysisKLines{},
 		LimitUp: stockAnalysisLimitUps{}, StockConcept: stockAnalysisCatalog{}, SectorMap: fakeSectorMapProvider{},
 		ThemeOverview: stockAnalysisThemes{}, News: stockAnalysisNews{}, ReviewDBPath: ":memory:", PortfolioDBPath: ":memory:",
-		SettingsPath: "", HermesGateway: gateway,
+		SettingsPath: "", AgentGateway: gateway,
 	})
 	t.Cleanup(func() { _ = server.Close() })
 
@@ -95,7 +95,7 @@ func TestPortfolioInspectionRunsInBackgroundAndReturnsReport(t *testing.T) {
 }
 
 func TestPortfolioInspectionRejectsOverAllocation(t *testing.T) {
-	server := NewServer(Config{ReviewDBPath: ":memory:", PortfolioDBPath: ":memory:", SettingsPath: "", HermesGateway: &fakeHermesGateway{status: hermes.Status{Available: true, Configured: true}}})
+	server := NewServer(Config{ReviewDBPath: ":memory:", PortfolioDBPath: ":memory:", SettingsPath: "", AgentGateway: &fakeAgentGateway{status: agent.Status{Available: true, Configured: true}}})
 	t.Cleanup(func() { _ = server.Close() })
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/portfolio-inspections", strings.NewReader(`{"trader_profile":"balanced","holdings":[{"symbol":"600519","weight_percent":60},{"symbol":"000858","weight_percent":50}]}`))
 	response := httptest.NewRecorder()

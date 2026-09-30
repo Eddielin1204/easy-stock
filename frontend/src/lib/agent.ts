@@ -1,46 +1,47 @@
 import type { BackendConfig } from './backend';
 import { logRuntimeEvent, runtimeErrorDetails } from './runtime-log';
 
-export type HermesStreamResult = {
+export type AgentStreamResult = {
 	content: string;
 	reasoning?: string;
-	hermesSessionID: string;
+	agentSessionID: string;
 };
 
-export type HermesUsage = {
+export type AgentUsage = {
 	prompt_tokens: number;
 	completion_tokens: number;
 	total_tokens: number;
 	model: string;
 };
 
-export type HermesClarifyRequest = {
+export type AgentClarifyRequest = {
 	question: string;
 	choices: string[];
 	requestID: string;
 };
 
-type HermesBatchClarifyQuestion = {
+type AgentBatchClarifyQuestion = {
 	qid: string;
 	question: string;
 	choices?: string[];
 	multi_select?: boolean;
 };
 
-export type HermesStreamRequest = {
+export type AgentStreamRequest = {
 	config: BackendConfig;
 	prompt: string;
+ configurationID?: string;
 	analysisID?: string;
-	hermesSessionID?: string;
+	agentSessionID?: string;
 	seedMessages?: Array<{ role: 'user' | 'assistant'; content: string }>;
 	onDelta?: (content: string) => void;
 	onReasoning?: (content: string) => void;
 	onSession?: (sessionID: string) => void;
 	onStatus?: (status: { kind: string; text?: string }) => void;
 	module?: string;
-	onUsage?: (usage: HermesUsage) => void;
+	onUsage?: (usage: AgentUsage) => void;
 	onApproval?: (approval: { patternKey?: string; description?: string; command?: string }, respond: (choice: 'once' | 'session' | 'deny') => void) => void;
-	onClarify?: (request: HermesClarifyRequest, respond: (answer: string) => void) => void;
+	onClarify?: (request: AgentClarifyRequest, respond: (answer: string) => void) => void;
 	signal?: AbortSignal;
 };
 
@@ -54,29 +55,30 @@ type RPCFrame = {
 
 const HANDSHAKE_TIMEOUT_MS = 20_000;
 
-export function buildHermesWebSocketURL(config: BackendConfig) {
+export function buildAgentWebSocketURL(config: BackendConfig, configurationID?: string) {
 	const url = new URL('/api/v1/ai/ws', config.backendUrl);
 	url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
 	if (config.token) url.searchParams.set('token', config.token);
+	if (configurationID) url.searchParams.set('configuration_id', configurationID);
 	return url.toString();
 }
 
-export function streamHermesPrompt(request: HermesStreamRequest): Promise<HermesStreamResult> {
+export function streamAgentPrompt(request: AgentStreamRequest): Promise<AgentStreamResult> {
 	return new Promise((resolve, reject) => {
 		let socket: WebSocket;
 		let settled = false;
 		let ready = false;
 		let setupRequestID = '';
-		let setupMethod: 'session.create' | 'session.resume' = request.hermesSessionID ? 'session.resume' : 'session.create';
+		let setupMethod: 'session.create' | 'session.resume' = request.agentSessionID ? 'session.resume' : 'session.create';
 		let submitRequestID = '';
 		let liveSessionID = '';
-		let storedSessionID = request.hermesSessionID || '';
+		let storedSessionID = request.agentSessionID || '';
 		let nextID = 1;
 		let streamed = '';
 		const reasoningBlocks: string[] = [];
 		let nextReasoningBlock = true;
 		let timeout: ReturnType<typeof setTimeout> | undefined;
-		let batchClarify: { frameID: string; questions: HermesBatchClarifyQuestion[]; answers: Record<string, string>; index: number } | undefined;
+		let batchClarify: { frameID: string; questions: AgentBatchClarifyQuestion[]; answers: Record<string, string>; index: number } | undefined;
 
 		const cleanup = () => {
 			if (timeout) clearTimeout(timeout);
@@ -93,14 +95,14 @@ export function streamHermesPrompt(request: HermesStreamRequest): Promise<Hermes
 				}
 				reject(error);
 			}
-			else resolve({ content, hermesSessionID: storedSessionID, ...(reasoningBlocks.length ? { reasoning: reasoningBlocks.join('\n\n') } : {}) });
+			else resolve({ content, agentSessionID: storedSessionID, ...(reasoningBlocks.length ? { reasoning: reasoningBlocks.join('\n\n') } : {}) });
 		};
 		const armTimeout = (message: string) => {
 			if (timeout) clearTimeout(timeout);
 			timeout = setTimeout(() => finish(new Error(message)), HANDSHAKE_TIMEOUT_MS);
 		};
 		const send = (method: string, params: Record<string, unknown>) => {
-			const id = `hermes-${nextID++}`;
+			const id = `agent-${nextID++}`;
 			socket.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }));
 			return id;
 		};
@@ -161,11 +163,11 @@ export function streamHermesPrompt(request: HermesStreamRequest): Promise<Hermes
 		const setupSession = (method = setupMethod) => {
 			setupMethod = method;
 			setupRequestID = method === 'session.resume'
-				? send(method, { session_id: request.hermesSessionID })
+				? send(method, { session_id: request.agentSessionID })
 				: send(method, {
 					...(request.seedMessages?.length ? { messages: request.seedMessages } : {}),
 				});
-			armTimeout(method === 'session.resume' ? '恢复 Hermes 对话超时' : '创建 Hermes 对话超时');
+			armTimeout(method === 'session.resume' ? '恢复 Agent 对话超时' : '创建 Agent 对话超时');
 		};
 		function abort() {
 			if (socket.readyState === WebSocket.OPEN && liveSessionID) {
@@ -177,7 +179,7 @@ export function streamHermesPrompt(request: HermesStreamRequest): Promise<Hermes
 		}
 
 		try {
-			socket = new WebSocket(buildHermesWebSocketURL(request.config));
+			socket = new WebSocket(buildAgentWebSocketURL(request.config, request.configurationID));
 		} catch (error) {
 			logRuntimeEvent('error', 'ai-chat', { event: 'websocket_open_failure', error: runtimeErrorDetails(error) });
 			reject(error);
@@ -188,7 +190,7 @@ export function streamHermesPrompt(request: HermesStreamRequest): Promise<Hermes
 			abort();
 			return;
 		}
-		armTimeout('连接 Hermes 运行时超时');
+		armTimeout('连接 Agent 运行时超时');
 
 		socket.onmessage = (event) => {
 			if (settled) return;
@@ -210,7 +212,7 @@ export function streamHermesPrompt(request: HermesStreamRequest): Promise<Hermes
 						setupSession('session.create');
 						return;
 					}
-					finish(new Error(frame.error.message || 'Hermes 会话初始化失败'));
+					finish(new Error(frame.error.message || 'Agent 会话初始化失败'));
 					return;
 				}
 				liveSessionID = stringValue(frame.result?.session_id);
@@ -219,7 +221,7 @@ export function streamHermesPrompt(request: HermesStreamRequest): Promise<Hermes
 					|| storedSessionID
 					|| liveSessionID;
 				if (!liveSessionID) {
-					finish(new Error('Hermes 未返回会话 ID'));
+					finish(new Error('Agent 未返回会话 ID'));
 					return;
 				}
 				if (timeout) clearTimeout(timeout);
@@ -228,7 +230,7 @@ export function streamHermesPrompt(request: HermesStreamRequest): Promise<Hermes
 				return;
 			}
 			if (frame.id === submitRequestID && frame.error) {
-				finish(new Error(frame.error.message || 'Hermes 提交提示词失败'));
+				finish(new Error(frame.error.message || 'Agent 提交提示词失败'));
 				return;
 			}
 			if (frame.method === 'approval' && frame.id) {
@@ -243,7 +245,7 @@ export function streamHermesPrompt(request: HermesStreamRequest): Promise<Hermes
 			if (frame.method === 'clarify' && frame.id) {
 				const params = frame.params || {};
 				const questions = Array.isArray(params.questions)
-					? params.questions.filter((item): item is HermesBatchClarifyQuestion => Boolean(item && typeof item === 'object' && stringValue((item as Record<string, unknown>).qid)))
+					? params.questions.filter((item): item is AgentBatchClarifyQuestion => Boolean(item && typeof item === 'object' && stringValue((item as Record<string, unknown>).qid)))
 					: [];
 				if (questions.length > 0) {
 					batchClarify = { frameID: frame.id, questions, answers: {}, index: 0 };
@@ -260,7 +262,7 @@ export function streamHermesPrompt(request: HermesStreamRequest): Promise<Hermes
 				return;
 			}
 			if (type === 'thinking.delta' || type === 'reasoning.available') {
-				// Hermes 0.21 uses thinking.delta for spinner/wait notices and
+				// Agent 0.21 uses thinking.delta for spinner/wait notices and
 				// reasoning.available for assistant-text previews, not reasoning tokens.
 				request.onStatus?.({ kind: 'process', text: eventText(frame, 'text') || '等待模型回复…' });
 				return;
@@ -314,11 +316,11 @@ export function streamHermesPrompt(request: HermesStreamRequest): Promise<Hermes
 				const status = eventText(frame, 'status');
 				const content = (eventText(frame, 'content') || eventText(frame, 'text') || streamed).trim();
 				if (status === 'error' || status === 'failed') {
-					finish(new Error(content || 'Hermes 执行失败'));
+					finish(new Error(content || 'Agent 执行失败'));
 					return;
 				}
 				if (!content) {
-					finish(new Error('Hermes 没有返回有效内容'));
+					finish(new Error('Agent 没有返回有效内容'));
 					return;
 				}
 				request.onDelta?.(content);
@@ -326,12 +328,12 @@ export function streamHermesPrompt(request: HermesStreamRequest): Promise<Hermes
 				return;
 			}
 			if (type === 'error' || type === 'gateway.error' || type === 'message.error' || type === 'session.error' || type === 'run.error') {
-				finish(new Error(eventText(frame, 'message') || 'Hermes 执行失败'));
+				finish(new Error(eventText(frame, 'message') || 'Agent 执行失败'));
 			}
 		};
-		socket.onerror = () => finish(new Error('无法连接 Hermes 对话运行时，请检查桌面运行时和模型设置。'));
+		socket.onerror = () => finish(new Error('无法连接 Agent 对话运行时，请检查桌面运行时和模型设置。'));
 		socket.onclose = () => {
-			if (!settled) finish(new Error('Hermes 对话连接已断开'));
+			if (!settled) finish(new Error('Agent 对话连接已断开'));
 		};
 	});
 }

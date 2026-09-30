@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { BackendConfig, HermesAgentSettings, requestJSON } from '../lib/backend';
+import { BackendConfig, AgentSettings, requestJSON } from '../lib/backend';
 
 /** Both analysis and chat consume the backend's model/route capability policy. */
 export function ReasoningControl({ config, refreshKey, disabled, onSaved, label = '选择思考等级' }: {
@@ -9,7 +9,7 @@ export function ReasoningControl({ config, refreshKey, disabled, onSaved, label 
 	onSaved?: () => void;
 	label?: string;
 }) {
-	const [snapshot, setSnapshot] = useState<{ key: string; config: BackendConfig; data: HermesAgentSettings } | null>(null);
+	const [snapshot, setSnapshot] = useState<{ key: string; config: BackendConfig; data: AgentSettings } | null>(null);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
 	const sequence = useRef(0);
@@ -19,7 +19,7 @@ export function ReasoningControl({ config, refreshKey, disabled, onSaved, label 
 		setError('');
 		if (!config) { setBusy(false); return; }
 		setBusy(true);
-		requestJSON<{ data: HermesAgentSettings }>(config, '/api/v1/settings/agent')
+		requestJSON<{ data: AgentSettings }>(config, '/api/v1/settings/agent')
 			.then(({ data }) => { if (sequence.current === id) setSnapshot({ key: refreshKey, config, data }); })
 			.catch(() => { if (sequence.current === id) setError('无法读取模型思考能力，请刷新后重试'); })
 			.finally(() => { if (sequence.current === id) setBusy(false); });
@@ -33,7 +33,7 @@ export function ReasoningControl({ config, refreshKey, disabled, onSaved, label 
 		const id = ++sequence.current;
 		setBusy(true); setError('');
 		try {
-			const response = await requestJSON<{ data: HermesAgentSettings }>(config, '/api/v1/settings/agent', {
+			const response = await requestJSON<{ data: AgentSettings }>(config, '/api/v1/settings/agent', {
 				method: 'PUT', headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ reasoning_effort: value, reasoning_context: data.reasoning_context }),
 			});
@@ -47,7 +47,7 @@ export function ReasoningControl({ config, refreshKey, disabled, onSaved, label 
 	return <label className="reasoning-control" title={error || data?.reasoning?.note || '尚未确认当前模型的思考能力'}>
 		<span>思考</span>
 		<select aria-label={label} value={selected} disabled={disabled || busy || !selected || options.length < 2} onChange={(event) => void save(event.target.value)}>
-			{!selected && <option value="">{busy ? '读取能力中…' : '暂不支持调节'}</option>}
+			{!selected && <option value="">{busy ? '读取能力中…' : '能力未确认'}</option>}
 			{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
 		</select>
 		{error && <small role="alert">{error}</small>}

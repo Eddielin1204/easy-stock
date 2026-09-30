@@ -550,7 +550,7 @@ export function ReviewDiary({ config, refreshKey }: Props) {
 					{selectedPost ? <>
 						<div className="review-reader-heading"><div><span className={`source-badge ${selectedPost.source}`}>{sourceLabel(selectedPost.source)}</span><small>{selectedPost.author_name} · {formatDateTime(selectedPost.published_at)}</small></div><div className="review-reader-actions"><a href={selectedPost.original_url} target="_blank" rel="noreferrer">查看原文 <ExternalLink size={14} /></a><button type="button" title="删除本地文章和缓存" disabled={!!deletingPost || !!deletingAuthor} onClick={() => void deletePost(selectedPost)}>{deletingPost === selectedPost.id ? <RefreshCw className="spin" size={14} /> : <Trash2 size={14} />}删除</button></div></div>
 						<h2>{selectedPost.title}</h2>
-						<div className={`review-ai-placeholder ${selectedPost.ai_summary ? 'ready' : ''}`}><Sparkles size={15} /><div><strong>Hermes AI 复盘提炼</strong>{selectedPost.ai_summary ? <><p>{selectedPost.ai_summary}</p>{selectedPost.ai_key_points?.length > 0 && <ul>{selectedPost.ai_key_points.map((point) => <li key={point}>{point}</li>)}</ul>}{selectedPost.ai_outlook && <span><b>后市预期：</b>{selectedPost.ai_outlook}</span>}</> : <span>{selectedPost.ai_error || '在系统设置中配置 Hermes 模型后，可自动提炼核心观点和后市预期。'}</span>}</div><button type="button" disabled={analyzing === selectedPost.id} onClick={() => void analyzePost(selectedPost.id)}>{analyzing === selectedPost.id ? <RefreshCw className="spin" size={14} /> : <Sparkles size={14} />}{selectedPost.ai_summary ? '重新提炼' : '立即提炼'}</button></div>
+						<div className={`review-ai-placeholder ${selectedPost.ai_summary ? 'ready' : ''}`}><Sparkles size={15} /><div><strong>Agent AI 复盘提炼</strong>{selectedPost.ai_summary ? <><p>{selectedPost.ai_summary}</p>{selectedPost.ai_key_points?.length > 0 && <ul>{selectedPost.ai_key_points.map((point) => <li key={point}>{point}</li>)}</ul>}{selectedPost.ai_outlook && <span><b>后市预期：</b>{selectedPost.ai_outlook}</span>}</> : <span>{selectedPost.ai_error || '在系统设置中配置 Agent 模型后，可自动提炼核心观点和后市预期。'}</span>}</div><button type="button" disabled={analyzing === selectedPost.id} onClick={() => void analyzePost(selectedPost.id)}>{analyzing === selectedPost.id ? <RefreshCw className="spin" size={14} /> : <Sparkles size={14} />}{selectedPost.ai_summary ? '重新提炼' : '立即提炼'}</button></div>
 						<div className="review-article-text">{selectedPost.content_text || selectedPost.digest || '正文暂未获取，请查看原文。'}</div>
 						<footer><span>抓取时间 {formatDateTime(selectedPost.fetched_at)}</span><span>观点来源于原作者，不代表系统结论</span></footer>
 					</> : <div className="review-reader-empty"><BookOpen size={28} /><strong>选择一篇复盘开始阅读</strong><span>文章正文只展示经过清洗的纯文本，原始页面可通过“查看原文”打开。</span></div>}
@@ -604,7 +604,7 @@ function DailyValidationView({ validation, refreshing, onRefresh }: { validation
 	const dataQuality = validation.data_quality || [];
 	return <section className="daily-validation-view">
 		<header className="daily-validation-heading">
-			<div><span><ListChecks size={15} />YESTERDAY VIEWPOINT VALIDATION</span><h2>{validation.summary_date} 复盘观点验证</h2><p>{validation.headline || '用今日收盘数据回看昨日观点。'}</p><small>验证日 {validation.verification_date || '—'} · {formatDateTime(validation.generated_at)} 生成 · {validation.ai_status === 'ready' ? 'Hermes 已解释' : '规则核验保留'}</small></div>
+			<div><span><ListChecks size={15} />YESTERDAY VIEWPOINT VALIDATION</span><h2>{validation.summary_date} 复盘观点验证</h2><p>{validation.headline || '用今日收盘数据回看昨日观点。'}</p><small>验证日 {validation.verification_date || '—'} · {formatDateTime(validation.generated_at)} 生成 · {validation.ai_status === 'ready' ? 'Agent 已解释' : '规则核验保留'}</small></div>
 			<button type="button" onClick={onRefresh} disabled={refreshing}>{refreshing ? <RefreshCw className="spin" size={14} /> : <RefreshCw size={14} />}重新验证</button>
 		</header>
 		<div className="daily-validation-metrics">
@@ -882,7 +882,7 @@ function FrameworkItem({ label, content }: { label: string; content: string }) {
 }
 
 function ReviewSummaryEmpty({ running, onGenerate, onOpenLibrary, authors = false }: { running: boolean; onGenerate: () => void; onOpenLibrary: () => void; authors?: boolean }) {
-	return <section className="review-summary-empty"><div><BrainCircuit size={34} /><span>{running ? 'Hermes 正在处理作者观点' : authors ? '还没有可展示的作者观点卡' : '还没有今天的结构化复盘'}</span><strong>{running ? '任务完成后会自动出现在这里' : '先从本地原文资料生成一份可验证的综合复盘'}</strong><p>结果将包含作者独立观点、跨作者共识与分歧、三种次日情景、题材优先级和盘中验证清单。</p><div>{!running && <button type="button" onClick={onGenerate}><Sparkles size={15} />生成今日复盘</button>}<button type="button" className="secondary" onClick={onOpenLibrary}><BookOpen size={15} />查看原文资料</button></div></div></section>;
+	return <section className="review-summary-empty"><div><BrainCircuit size={34} /><span>{running ? 'Agent 正在处理作者观点' : authors ? '还没有可展示的作者观点卡' : '还没有今天的结构化复盘'}</span><strong>{running ? '任务完成后会自动出现在这里' : '先从本地原文资料生成一份可验证的综合复盘'}</strong><p>结果将包含作者独立观点、跨作者共识与分歧、三种次日情景、题材优先级和盘中验证清单。</p><div>{!running && <button type="button" onClick={onGenerate}><Sparkles size={15} />生成今日复盘</button>}<button type="button" className="secondary" onClick={onOpenLibrary}><BookOpen size={15} />查看原文资料</button></div></div></section>;
 }
 
 function AuthorViewpointLibrary({ views, tradeDate }: { views: ReviewDailyAuthorView[]; tradeDate: string }) {

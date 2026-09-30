@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/foundation"
-	"easy-stock/backend/internal/hermes"
 	"easy-stock/backend/internal/runtimelog"
 	"easy-stock/backend/internal/stockanalysis"
 )
@@ -27,7 +27,7 @@ type HoldingAnalyzer func(context.Context, Holding) (stockanalysis.Analysis, err
 
 type Service struct {
 	store          *Store
-	gateway        hermes.Gateway
+	gateway        agent.Gateway
 	analyze        StockAnalyzer
 	analyzeHolding HoldingAnalyzer
 	logger         *log.Logger
@@ -36,7 +36,7 @@ type Service struct {
 	runningID      string
 }
 
-func NewService(store *Store, gateway hermes.Gateway, analyze StockAnalyzer, logger *log.Logger, holdingAnalyzers ...HoldingAnalyzer) *Service {
+func NewService(store *Store, gateway agent.Gateway, analyze StockAnalyzer, logger *log.Logger, holdingAnalyzers ...HoldingAnalyzer) *Service {
 	service := &Service{store: store, gateway: gateway, analyze: analyze, logger: logger, concurrency: DefaultConcurrency}
 	if len(holdingAnalyzers) > 0 {
 		service.analyzeHolding = holdingAnalyzers[0]
@@ -115,6 +115,13 @@ func (s *Service) run(job Job) {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Minute)
 	defer cancel()
+	ctx, release, bindErr := agent.BindTask(ctx, s.gateway)
+	if bindErr != nil {
+		job.Status, job.Error, job.CompletedAt = "failed", bindErr.Error(), time.Now().UTC()
+		s.persist(job)
+		return
+	}
+	defer release()
 	type event struct {
 		index    int
 		started  bool
@@ -242,7 +249,7 @@ func (s *Service) generateAIReport(ctx context.Context, request Request, results
 	if err != nil {
 		return AIReport{}, err
 	}
-	response, err := hermes.PromptFullyAuthorized(hermes.WithUsageModule(ctx, "portfolio-inspection"), s.gateway, prompt)
+	response, err := agent.PromptFullyAuthorized(agent.WithUsageModule(ctx, "portfolio-inspection"), s.gateway, prompt)
 	if err != nil {
 		return AIReport{}, fmt.Errorf("持仓组合AI分析失败: %w", err)
 	}

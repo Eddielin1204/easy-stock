@@ -1,15 +1,127 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/appsettings"
-	"easy-stock/backend/internal/hermes"
 )
+
+// Shape returned by https://open.bigmodel.cn/api/v1/models. Its inference
+// endpoint works even though the directory is not an OpenAI data[].id list.
+const glmResponsesCatalog = `{"models":[
+	{"slug":"glm-5.3","display_name":"glm-5.3","supported_in_api":true,"context_window":1048576,"default_reasoning_level":"max","supported_reasoning_levels":[{"effort":"low"},{"effort":"high"},{"effort":"max"}]},
+	{"slug":"glm-5.3-flash","display_name":"glm-5.3-flash","supported_in_api":true,"input_modalities":["text"],"default_reasoning_level":"max","supported_reasoning_levels":[{"effort":"low"},{"effort":"high"},{"effort":"max"}]},
+	{"slug":"glm-5-turbo","display_name":"glm-5-turbo","supported_in_api":true,"supported_reasoning_levels":[]}
+]}`
+
+func TestSettingsLLMModelsSupportsGLMResponsesCatalogAndDiscoveryModes(t *testing.T) {
+	for _, mode := range []string{"codex_responses", "responses", "auto"} {
+		t.Run(mode, func(t *testing.T) {
+			requests := 0
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				if r.Method != http.MethodGet || r.URL.Path != "/api/v1/models" || r.Header.Get("Authorization") != "Bearer glm-private-key" {
+					t.Error("discovery did not use the configured endpoint and saved credential")
+				}
+				_, _ = io.WriteString(w, glmResponsesCatalog)
+			}))
+			defer upstream.Close()
+			store, _ := appsettings.Open("")
+			before := store.Snapshot()
+			gateway := &fakeAgentGateway{modelAPIKey: "glm-private-key"}
+			server := NewServer(Config{SettingsStore: store, AgentGateway: gateway})
+			body := `{"provider":"zhipu","base_url":"` + upstream.URL + `/api/v1","api_mode":"` + mode + `"}`
+			response := httptest.NewRecorder()
+			server.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/settings/llm/models", strings.NewReader(body)))
+			if response.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+			var result struct {
+				Data llmModelsResult `json:"data"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			var ids []string
+			for _, model := range result.Data.Models {
+				ids = append(ids, model.ID)
+				if mode != "auto" && model.ID != "glm-5-turbo" {
+					if model.Reasoning.Source != "model_api" || model.Reasoning.Default != "max" || !model.Reasoning.Allows("low") || !model.Reasoning.Allows("high") || model.Reasoning.Allows("medium") {
+						t.Fatalf("Responses reasoning metadata lost: %+v", model.Reasoning)
+					}
+				}
+			}
+			if !reflect.DeepEqual(ids, []string{"glm-5-turbo", "glm-5.3", "glm-5.3-flash"}) {
+				t.Fatalf("unexpected catalog: %v", ids)
+			}
+			if requests != 1 || result.Data.SourceURL != upstream.URL+"/api/v1/models" || !reflect.DeepEqual(before, store.Snapshot()) {
+				t.Fatal("discovery must not probe inference, rewrite the URL, or change saved settings")
+			}
+			if strings.Contains(response.Body.String(), "glm-private-key") || strings.Contains(response.Body.String(), "context_window") {
+				t.Fatal("response exposed credentials or internal catalog metadata")
+			}
+		})
+	}
+}
+
+func TestDecodeNativeModelCatalogNormalizesIDsAndPreservesMetadata(t *testing.T) {
+	models, err := decodeModelList([]byte(`{"models":[
+		{"slug":" z-model ","display_name":" Z model ","context_window":1048576},
+		{"slug":"a-model","supported_in_api":true},
+		{"slug":"a-model"},{"slug":""},{"id":"not-a-slug"},
+		{"slug":"unavailable","supported_in_api":false}
+	]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 2 || models[0].ID != "a-model" || models[1].ID != "z-model" || models[1].DisplayName != "Z model" {
+		t.Fatalf("unexpected models: %+v", models)
+	}
+	if !strings.Contains(string(models[1].Metadata), `"context_window":1048576`) {
+		t.Fatal("native metadata lost before runtime capability resolution")
+	}
+}
+
+func TestSettingsLLMModelsRejectsHTTP200ProviderErrorsWithoutLeakingBody(t *testing.T) {
+	for _, body := range []string{
+		`{"code":1001,"msg":"private-key debug","success":false}`,
+		`{"error":{"code":"invalid_api_key","message":"private-key debug"}}`,
+		`{"success":false,"models":[{"slug":"must-not-be-used"}]}`,
+	} {
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, body)
+		}))
+		store, _ := appsettings.Open("")
+		server := NewServer(Config{SettingsStore: store})
+		request := `{"provider":"zhipu","base_url":"` + upstream.URL + `/api/v1","api_key":"private-key","api_mode":"codex_responses"}`
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/settings/llm/models", strings.NewReader(request)))
+		upstream.Close()
+		if response.Code != http.StatusBadGateway || !strings.Contains(response.Body.String(), "模型列表接口返回错误") {
+			t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+		}
+		for _, secret := range []string{"private-key", "debug", "must-not-be-used"} {
+			if strings.Contains(response.Body.String(), secret) {
+				t.Fatal("provider error body leaked into the response")
+			}
+		}
+	}
+}
+
+func TestDecodeModelListEmptyDirectorySuggestsManualModel(t *testing.T) {
+	for _, body := range []string{`{"models":[]}`, `{"data":[]}`, `{}`} {
+		if _, err := decodeModelList([]byte(body)); err == nil || !strings.Contains(err.Error(), "手动输入模型 ID 并测试连接") {
+			t.Fatalf("empty directory was treated as a model invocation failure: %v", err)
+		}
+	}
+}
 
 func TestSettingsLLMModelsUsesSavedKeyAndNormalizesResults(t *testing.T) {
 	var gotPath, gotAuthorization string
@@ -22,8 +134,8 @@ func TestSettingsLLMModelsUsesSavedKeyAndNormalizesResults(t *testing.T) {
 	defer upstream.Close()
 
 	store, _ := appsettings.Open("")
-	gateway := &fakeHermesGateway{status: hermes.Status{Available: true, APIKeyConfigured: true}, modelAPIKey: "saved-private-key"}
-	server := NewServer(Config{SettingsStore: store, HermesGateway: gateway})
+	gateway := &fakeAgentGateway{status: agent.Status{Available: true, APIKeyConfigured: true}, modelAPIKey: "saved-private-key"}
+	server := NewServer(Config{SettingsStore: store, AgentGateway: gateway})
 	body := `{"provider":"custom","base_url":"` + upstream.URL + `/v1"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/settings/llm/models", strings.NewReader(body))
 	rec := httptest.NewRecorder()
@@ -143,8 +255,8 @@ func TestModelSyncFeedsReasoningControlsAndRejectsUnsupportedValues(t *testing.T
 	}))
 	defer upstream.Close()
 	store, _ := appsettings.Open("")
-	runtime := hermes.NewRuntime(hermes.Config{Home: t.TempDir()})
-	server := NewServer(Config{SettingsStore: store, HermesGateway: runtime})
+	runtime := agent.NewHermesRuntime(agent.HermesConfig{Home: t.TempDir()})
+	server := NewServer(Config{SettingsStore: store, AgentGateway: runtime})
 	if err := runtime.SyncLLM(appsettings.LLM{Provider: "custom", BaseURL: upstream.URL, Model: "claude-discovered", APIMode: "anthropic_messages"}, nil); err != nil {
 		t.Fatal(err)
 	}
