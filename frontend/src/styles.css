@@ -706,6 +706,44 @@ a:focus-visible {
 	.token-usage-stat > strong { font-size: 21px; }
 }
 
+.workspace-topbar { display: contents; }
+
+.workspace-topbar.collapsible {
+	display: grid;
+	width: 100%;
+	max-width: 1840px;
+	margin: 0 auto 10px;
+}
+
+.workspace-topbar.collapsible .topbar {
+	width: 100%;
+	margin: 10px 0 0;
+}
+
+.topbar[hidden] { display: none; }
+
+.topbar-toggle {
+	display: grid;
+	place-items: center;
+	justify-self: center;
+	width: 48px;
+	height: 20px;
+	padding: 0;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--surface);
+	color: var(--muted);
+	cursor: pointer;
+}
+
+.topbar-toggle:hover {
+	border-color: var(--theme-blue-line, #395879);
+	background: var(--surface-2);
+	color: var(--blue);
+}
+
+.workspace-topbar.expanded .topbar-toggle svg { transform: rotate(180deg); }
+
 .topbar {
 	display: grid;
 	grid-template-columns: minmax(260px, 1fr) auto minmax(280px, 1fr);

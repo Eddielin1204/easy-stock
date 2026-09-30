@@ -5,6 +5,7 @@ import {
 	BookMarked,
 	BookOpen,
 	BrainCircuit,
+	ChevronDown,
 	ChevronRight,
 	Clock3,
 	Database,
@@ -99,6 +100,7 @@ export function App() {
 		return 'themes';
 	});
 	const [sidebarExpanded, setSidebarExpanded] = useState(true);
+	const [aiTopbarExpanded, setAITopbarExpanded] = useState(false);
 	const [config, setConfig] = useState<BackendConfig | null>(null);
 	const [themeStrengthWindow, setThemeStrengthWindow] = useState<ThemeStrengthWindow>('daily');
 	const [activeTheme, setActiveTheme] = useState('');
@@ -319,6 +321,7 @@ export function App() {
 	};
 
 	const switchWorkspace = (mode: WorkspaceMode) => {
+		if (mode === 'ai' && workspaceMode !== 'ai') setAITopbarExpanded(false);
 		setWorkspaceMode(mode);
 		window.history.replaceState(null, '', mode === 'limit-up' ? '#limit-up' : mode === 'mastery' ? '#mastery' : mode === 'reviews' ? '#reviews' : mode === 'stock-ai' ? '#stock-ai' : mode === 'portfolio-inspection' ? '#portfolio-inspection' : mode === 'ai' ? '#ai' : mode === 'market' ? '#market/pulse' : mode === 'token-usage' ? '#token-usage' : '#themes');
 	};
@@ -407,7 +410,17 @@ export function App() {
 				</div>
 			</aside>
 			<div className="app-shell">
-			<header className="topbar">
+			<div className={`workspace-topbar ${workspaceMode === 'ai' ? `collapsible ${aiTopbarExpanded ? 'expanded' : ''}` : ''}`}>
+				{workspaceMode === 'ai' && <button
+					type="button"
+					className="topbar-toggle"
+					onClick={() => setAITopbarExpanded((value) => !value)}
+					aria-expanded={aiTopbarExpanded}
+					aria-controls="workspace-topbar-content"
+					aria-label={aiTopbarExpanded ? '收起顶部栏' : '展开顶部栏'}
+					title={aiTopbarExpanded ? '收起顶部栏' : '展开顶部栏'}
+				><ChevronDown size={16} aria-hidden="true" /></button>}
+			<header id="workspace-topbar-content" className="topbar" hidden={workspaceMode === 'ai' && !aiTopbarExpanded}>
 				<div className="brand-block">
 					<div className="brand-mark"><img src={`${import.meta.env.BASE_URL}easy-stock-mark.svg`} alt="easy-stock" /></div>
 					<div>
@@ -440,6 +453,7 @@ export function App() {
 					</button>
 				</div>
 			</header>
+			</div>
 
 			{workspaceMode === 'token-usage' ? <TokenUsageWorkspace config={config} refreshKey={tokenUsageRefreshKey} /> : workspaceMode === 'themes' ? <>
 			<section className="market-strip" aria-label="市场概览">
