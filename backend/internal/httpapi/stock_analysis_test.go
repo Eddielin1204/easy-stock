@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/foundation"
-	"easy-stock/backend/internal/hermes"
 )
 
 func TestStockAIAnalysisEndpointBuildsTrendProfile(t *testing.T) {
@@ -166,17 +166,17 @@ func TestStockAIAnalysisEndpointSupportsNewListingWithOneKLine(t *testing.T) {
 }
 
 func TestStockAIAnalysisQuickModeSkipsAllModelCalls(t *testing.T) {
-	gateway := &fakeHermesGateway{
-		status: hermes.Status{Available: true, Configured: true, APIKeyConfigured: true},
-		promptFunc: func(context.Context, string) (hermes.PromptResult, error) {
-			return hermes.PromptResult{}, errors.New("quick mode must not call the model")
+	gateway := &fakeAgentGateway{
+		status: agent.Status{Available: true, Configured: true, APIKeyConfigured: true},
+		promptFunc: func(context.Context, string) (agent.PromptResult, error) {
+			return agent.PromptResult{}, errors.New("quick mode must not call the model")
 		},
 	}
 	server := NewServer(Config{
 		Realtime: stockAnalysisRealtime{}, KLinePrimary: stockAnalysisKLines{}, KLineFallback: stockAnalysisKLines{},
 		LimitUp: stockAnalysisLimitUps{}, StockConcept: stockAnalysisCatalog{}, StockBusiness: stockAnalysisBusiness{},
 		ThemeOverview: stockAnalysisThemes{}, News: stockAnalysisNews{}, MarketOverview: &fakeMarketOverviewProvider{},
-		ReviewDBPath: ":memory:", SettingsPath: "", HermesGateway: gateway,
+		ReviewDBPath: ":memory:", SettingsPath: "", AgentGateway: gateway,
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/stocks/ai-analysis", strings.NewReader(`{"symbol":"600519","mode":"quick"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -206,20 +206,20 @@ func TestStockAIAnalysisQuickModeSkipsAllModelCalls(t *testing.T) {
 
 func TestStockAIAnalysisFullModeUsesCurrentModelWithToolFreeStages(t *testing.T) {
 	var logs bytes.Buffer
-	gateway := &fakeHermesGateway{
-		status: hermes.Status{Available: true, Configured: true, APIKeyConfigured: true},
-		promptFunc: func(_ context.Context, prompt string) (hermes.PromptResult, error) {
+	gateway := &fakeAgentGateway{
+		status: agent.Status{Available: true, Configured: true, APIKeyConfigured: true},
+		promptFunc: func(_ context.Context, prompt string) (agent.PromptResult, error) {
 			if strings.Contains(prompt, "独立提出需要核实的问题") {
-				return hermes.PromptResult{Content: `{"questions":[],"hypotheses":[],"missing_facts":[]}`}, nil
+				return agent.PromptResult{Content: `{"questions":[],"hypotheses":[],"missing_facts":[]}`}, nil
 			}
-			return hermes.PromptResult{Content: validHTTPResearchJSON}, nil
+			return agent.PromptResult{Content: validHTTPResearchJSON}, nil
 		},
 	}
 	server := NewServer(Config{
 		Realtime: stockAnalysisRealtime{}, KLinePrimary: stockAnalysisKLines{}, KLineFallback: stockAnalysisKLines{},
 		LimitUp: stockAnalysisLimitUps{}, StockConcept: stockAnalysisCatalog{}, StockBusiness: stockAnalysisBusiness{},
 		ThemeOverview: stockAnalysisThemes{}, News: stockAnalysisNews{}, MarketOverview: &fakeMarketOverviewProvider{},
-		ReviewDBPath: ":memory:", SettingsPath: "", HermesGateway: gateway, Logger: log.New(&logs, "", 0),
+		ReviewDBPath: ":memory:", SettingsPath: "", AgentGateway: gateway, Logger: log.New(&logs, "", 0),
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/stocks/ai-analysis", strings.NewReader(`{"symbol":"600519","mode":"full"}`))
 	req.Header.Set("Content-Type", "application/json")

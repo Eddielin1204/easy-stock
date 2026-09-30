@@ -1,4 +1,4 @@
-package hermes
+package agent
 
 import (
 	"bytes"
@@ -34,7 +34,7 @@ type ReasoningCapability struct {
 }
 
 func reasoningCapability(source, wire, note, fallback string, values ...string) ReasoningCapability {
-	labels := map[string]string{"default": "暂不支持调节", "none": "关闭思考", "enabled": "开启思考", "minimal": "极简", "low": "低", "medium": "中", "high": "高", "xhigh": "极高", "max": "最大"}
+	labels := map[string]string{"default": "模型默认", "none": "关闭思考", "enabled": "开启思考", "minimal": "极简", "low": "低", "medium": "中", "high": "高", "xhigh": "极高", "max": "最大"}
 	c := ReasoningCapability{Default: fallback, Source: source, Wire: wire, Note: note, Options: []ReasoningOption{}}
 	for _, v := range values {
 		c.Options = append(c.Options, ReasoningOption{Value: v, Label: labels[v]})
@@ -67,10 +67,11 @@ func (c ReasoningCapability) Normalize(value string) string {
 	return c.Default
 }
 
-// Official rules checked 2026-09-18. Exact model IDs and routes deliberately
+// Official rules checked 2026-09-30. Exact model IDs and routes deliberately
 // avoid guessing future model capabilities or a proxy's parameter semantics.
 func OfficialReasoningCapability(cfg appsettings.LLM) ReasoningCapability {
-	unknown := reasoningCapability("unknown", "", "Hermes 尚未声明当前模型在此接口上的可调档位，使用运行时默认设置。", "default", "default")
+	unknown := reasoningCapability("unknown", "", "尚未确认当前模型在此接口上的可调档位，使用运行时默认设置。", "default", "default")
+	unknown.Options[0].Label = "能力未确认"
 	u, err := url.Parse(cfg.BaseURL)
 	if err != nil {
 		return unknown
@@ -80,6 +81,20 @@ func OfficialReasoningCapability(cfg appsettings.LLM) ReasoningCapability {
 	mode := cfg.APIMode
 	if mode == "" {
 		mode = "chat_completions"
+	}
+	if (host == "dashscope.aliyuncs.com" || host == "dashscope-intl.aliyuncs.com") && SupportsResponses(cfg) {
+		unknown.Note = "百炼原生 Responses 使用控制台提供的工作空间地址（*.maas.aliyuncs.com/compatible-mode/v1）；请核对当前地址与模型，或刷新模型目录确认档位。"
+	}
+	if c, ok := providerReasoningCapability(host, strings.TrimRight(u.Path, "/"), model, mode); ok {
+		return c
+	}
+	// Verified against Z.ai's native Responses catalog and Codex setup guide.
+	// This route accepts reasoning.effort directly; never use the Chat wire adapter.
+	if host == "open.bigmodel.cn" && strings.TrimRight(u.Path, "/") == "/api/v1" && SupportsResponses(cfg) {
+		switch model {
+		case "glm-5.3", "glm-5.3-flash":
+			return reasoningCapability("https://docs.bigmodel.cn/cn/coding-plan/tool/codex", "openai_responses", "Responses 接口支持低、高、最大三档，默认最大。", "max", "low", "high", "max")
+		}
 	}
 	if host == "open.bigmodel.cn" && mode == "chat_completions" && (strings.TrimRight(u.Path, "/") == "/api/paas/v4" || strings.TrimRight(u.Path, "/") == "/api/coding/paas/v4") {
 		source := "https://docs.bigmodel.cn/cn/guide/capabilities/thinking"
@@ -94,17 +109,16 @@ func OfficialReasoningCapability(cfg appsettings.LLM) ReasoningCapability {
 			return reasoningCapability(source, "glm", "官方提供思考开关，不提供独立强度档位。", "enabled", "none", "enabled")
 		}
 	}
-	// DashScope is not Hermes' qwen-oauth provider. Its documented hybrid
-	// models use a boolean, not a fabricated effort ladder.
-	if (host == "dashscope.aliyuncs.com" || host == "dashscope-intl.aliyuncs.com") && strings.TrimRight(u.Path, "/") == "/compatible-mode/v1" && mode == "chat_completions" {
+	// Chat Completions uses a thinking budget rather than reasoning_effort.
+	if (host == "dashscope.aliyuncs.com" || host == "dashscope-intl.aliyuncs.com" || strings.HasSuffix(host, ".maas.aliyuncs.com")) && strings.TrimRight(u.Path, "/") == "/compatible-mode/v1" && mode == "chat_completions" {
 		switch model {
 		case "qwen-plus", "qwen-plus-latest", "qwen-flash", "qwen-turbo", "qwen3-max", "qwen3-max-preview", "qwen3-max-2026-01-23", "qwen3-235b-a22b", "qwen3-32b", "qwen3-30b-a3b", "qwen3-14b", "qwen3-8b", "qwen3.8-max", "qwen3.8-max-0902", "qwen3.8-flash", "qwen3.8-27b":
-			return reasoningCapability("https://help.aliyun.com/zh/model-studio/deep-thinking", "qwen_toggle", "百炼混合思考模型使用开关，不提供独立的强度档位。", "enabled", "none", "enabled")
+			return budgetReasoningCapability("https://help.aliyun.com/zh/model-studio/deep-thinking", "qwen_budget")
 		}
 	}
-	if host == "api.openai.com" && strings.TrimRight(u.Path, "/") == "/v1" && (mode == "chat_completions" || mode == "codex_responses") {
+	if host == "api.openai.com" && strings.TrimRight(u.Path, "/") == "/v1" && (mode == "chat_completions" || SupportsResponses(cfg)) {
 		wire := "openai_chat"
-		if mode == "codex_responses" {
+		if SupportsResponses(cfg) {
 			wire = "openai_responses"
 		}
 		source := "https://developers.openai.com/api/docs/models/"
@@ -120,6 +134,75 @@ func OfficialReasoningCapability(cfg appsettings.LLM) ReasoningCapability {
 		}
 	}
 	return unknown
+}
+
+// Model catalogs carry Responses effort levels at the top level, whereas
+// Anthropic exposes them in capabilities. Keep discovery scoped to the wire.
+func DiscoveredModelReasoningCapability(mode string, raw json.RawMessage) (ReasoningCapability, bool) {
+	var model struct {
+		Capabilities  json.RawMessage `json:"capabilities"`
+		Default       string          `json:"default_reasoning_level"`
+		DefaultEffort string          `json:"default_reasoning_effort"`
+		Efforts       *[]string       `json:"supported_reasoning_efforts"`
+		Levels        *[]struct {
+			Effort string `json:"effort"`
+		} `json:"supported_reasoning_levels"`
+	}
+	if json.Unmarshal(raw, &model) != nil {
+		return ReasoningCapability{}, false
+	}
+	if mode == "anthropic_messages" {
+		return DiscoveredReasoningCapability(mode, model.Capabilities)
+	}
+	responses := SupportsResponses(appsettings.LLM{APIMode: mode})
+	if !responses && mode != "chat_completions" {
+		return ReasoningCapability{}, false
+	}
+	// Explicit effort catalogs work for arbitrary native OpenAI-compatible
+	// endpoints. A reasoning=true flag alone never supplies a level list.
+	if model.Efforts != nil {
+		levels := []struct {
+			Effort string `json:"effort"`
+		}{}
+		for _, effort := range *model.Efforts {
+			levels = append(levels, struct {
+				Effort string `json:"effort"`
+			}{effort})
+		}
+		model.Levels = &levels
+		if model.Default == "" {
+			model.Default = model.DefaultEffort
+		}
+	} else if !responses {
+		return ReasoningCapability{}, false
+	}
+	wire := "openai_chat"
+	if responses {
+		wire = "openai_responses"
+	}
+	if model.Levels == nil {
+		return ReasoningCapability{}, false
+	}
+	if len(*model.Levels) == 0 {
+		return reasoningCapability("model_api", wire, "模型接口未提供可调思考档位，使用默认设置。", "default", "default"), true
+	}
+	values := []string{}
+	for _, value := range []string{"none", "minimal", "low", "medium", "high", "xhigh", "max"} {
+		for _, level := range *model.Levels {
+			if level.Effort == value {
+				values = append(values, value)
+				break
+			}
+		}
+	}
+	if len(values) == 0 {
+		return ReasoningCapability{}, false
+	}
+	c := reasoningCapability("model_api", wire, "思考档位来自当前接口的模型目录。", model.Default, values...)
+	if !c.Allows(c.Default) {
+		c.Default = values[0]
+	}
+	return c, true
 }
 
 // Anthropic /v1/models exposes actual supported effort levels. A mere boolean
@@ -168,13 +251,21 @@ type capabilityCacheEntry struct {
 	Updated       time.Time                      `json:"updated"`
 	Models        map[string]ReasoningCapability `json:"models"`
 }
+
+const reasoningCapabilityVersion = 4
+
 type CapabilityGateway interface {
 	ResolveModelCapabilities(baseURL, apiMode string, models map[string]json.RawMessage) (map[string]ReasoningCapability, error)
 	SyncModelCapabilities(baseURL, apiMode string, models map[string]ReasoningCapability) error
 }
 
-func capabilityKey(baseURL, mode string) string { return strings.TrimRight(baseURL, "/") + "|" + mode }
-func (r *Runtime) readCapabilityCache() map[string]capabilityCacheEntry {
+func capabilityKey(baseURL, mode string) string {
+	if mode == "responses" {
+		mode = "codex_responses"
+	}
+	return strings.TrimRight(baseURL, "/") + "|" + mode
+}
+func (r *HermesRuntime) readCapabilityCache() map[string]capabilityCacheEntry {
 	cache := map[string]capabilityCacheEntry{}
 	data, err := os.ReadFile(filepath.Join(r.home, "model-capabilities.json"))
 	if err == nil {
@@ -185,11 +276,11 @@ func (r *Runtime) readCapabilityCache() map[string]capabilityCacheEntry {
 	}
 	return cache
 }
-func (r *Runtime) SyncModelCapabilities(baseURL, mode string, models map[string]ReasoningCapability) error {
+func (r *HermesRuntime) SyncModelCapabilities(baseURL, mode string, models map[string]ReasoningCapability) error {
 	r.configMu.Lock()
 	defer r.configMu.Unlock()
 	cache := r.readCapabilityCache()
-	cache[capabilityKey(baseURL, mode)] = capabilityCacheEntry{BridgeVersion: 2, Updated: time.Now(), Models: models}
+	cache[capabilityKey(baseURL, mode)] = capabilityCacheEntry{BridgeVersion: reasoningCapabilityVersion, Updated: time.Now(), Models: models}
 	data, err := json.Marshal(cache)
 	if err != nil {
 		return err
@@ -208,9 +299,9 @@ func (r *Runtime) SyncModelCapabilities(baseURL, mode string, models map[string]
 	}
 	return nil
 }
-func (r *Runtime) reasoningCapability(cfg appsettings.LLM) ReasoningCapability {
+func (r *HermesRuntime) reasoningCapability(cfg appsettings.LLM) ReasoningCapability {
 	if entry, ok := r.readCapabilityCache()[capabilityKey(cfg.BaseURL, cfg.APIMode)]; ok {
-		if c, ok := entry.Models[cfg.Model]; ok && entry.BridgeVersion == 2 && time.Since(entry.Updated) < 30*24*time.Hour {
+		if c, ok := entry.Models[cfg.Model]; ok && entry.BridgeVersion == reasoningCapabilityVersion && time.Since(entry.Updated) < 30*24*time.Hour {
 			return c
 		}
 	}
@@ -244,7 +335,7 @@ func storedReasoningEffort(config map[string]any) string {
 	}
 	return stringValue(agent["reasoning_effort"])
 }
-func (r *Runtime) applyReasoning(config map[string]any, cfg appsettings.LLM, value string) {
+func (r *HermesRuntime) applyReasoning(config map[string]any, cfg appsettings.LLM, value string) {
 	c := r.reasoningCapability(cfg)
 	effort := c.Normalize(value)
 	agent, _ := stringMap(config["agent"])
@@ -284,7 +375,7 @@ func (r *Runtime) applyReasoning(config map[string]any, cfg appsettings.LLM, val
 		}
 	}
 }
-func (r *Runtime) validateReasoning(config map[string]any, effort string) error {
+func (r *HermesRuntime) validateReasoning(config map[string]any, effort string) error {
 	if !r.reasoningCapability(reasoningLLM(config)).Allows(effort) {
 		return fmt.Errorf("当前模型或接口不支持思考选项 %q，请刷新模型能力后重试", effort)
 	}
@@ -301,24 +392,20 @@ func reasoningContext(config map[string]any) string {
 // ResolveModelCapabilities asks the bundled runtime once for an entire model
 // list. No provider keys or network access are needed: metadata is supplied by
 // the existing authenticated model discovery call.
-func (r *Runtime) ResolveModelCapabilities(baseURL, mode string, models map[string]json.RawMessage) (map[string]ReasoningCapability, error) {
+func (r *HermesRuntime) ResolveModelCapabilities(baseURL, mode string, models map[string]json.RawMessage) (map[string]ReasoningCapability, error) {
 	type item struct {
 		Model      string              `json:"model"`
 		Metadata   json.RawMessage     `json:"metadata,omitempty"`
 		Supplement ReasoningCapability `json:"supplement"`
 	}
 	request := struct {
-		Config map[string]string `json:"config"`
-		Models []item            `json:"models"`
-	}{Config: map[string]string{"base_url": baseURL, "api_mode": mode}}
+		HermesConfig map[string]string `json:"config"`
+		Models       []item            `json:"models"`
+	}{HermesConfig: map[string]string{"base_url": baseURL, "api_mode": mode}}
 	fallback := map[string]ReasoningCapability{}
 	for model, metadata := range models {
 		supplement := OfficialReasoningCapability(appsettings.LLM{Model: model, BaseURL: baseURL, APIMode: mode})
-		var raw struct {
-			Capabilities json.RawMessage `json:"capabilities"`
-		}
-		_ = json.Unmarshal(metadata, &raw)
-		if discovered, ok := DiscoveredReasoningCapability(mode, raw.Capabilities); ok {
+		if discovered, ok := DiscoveredModelReasoningCapability(mode, metadata); ok {
 			supplement = discovered
 		}
 		fallback[model] = supplement

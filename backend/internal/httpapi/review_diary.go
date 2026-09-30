@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"easy-stock/backend/internal/hermes"
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/review"
 )
 
@@ -314,7 +314,7 @@ type dailySummaryAnonymizeReplacement struct {
 }
 
 func (s *Server) reviewDailySummaryAnonymize(w http.ResponseWriter, r *http.Request) {
-	if s.hermesGateway == nil {
+	if s.agentGateway == nil {
 		writeError(w, http.StatusServiceUnavailable, "Hermes AI 分析底座不可用，请先在设置中配置模型")
 		return
 	}
@@ -336,9 +336,9 @@ func (s *Server) reviewDailySummaryAnonymize(w http.ResponseWriter, r *http.Requ
 	defer cancel()
 	promptGateway := s.usageGateway
 	if promptGateway == nil {
-		promptGateway = s.hermesGateway
+		promptGateway = s.agentGateway
 	}
-	response, err := hermes.PromptFullyAuthorized(hermes.WithUsageModule(ctx, "review-diary"), promptGateway, prompt)
+	response, err := agent.PromptFullyAuthorized(agent.WithUsageModule(ctx, "review-diary"), promptGateway, prompt)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "Hermes 复盘脱敏失败: "+err.Error())
 		return

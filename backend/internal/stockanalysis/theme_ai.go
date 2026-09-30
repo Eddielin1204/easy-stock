@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"easy-stock/backend/internal/foundation"
-	"easy-stock/backend/internal/hermes"
+	"easy-stock/backend/internal/agent"
 )
 
 const (
@@ -210,7 +210,7 @@ func PrepareThemeEvidencePrompt(input Input) ThemeEvidencePrompt {
 	return prepared
 }
 
-func ExtractPreparedThemeEvidence(ctx context.Context, prompter hermes.Prompter, prepared ThemeEvidencePrompt) ([]ThemeEvidence, []ThemeEvidenceAttempt, error) {
+func ExtractPreparedThemeEvidence(ctx context.Context, prompter agent.Prompter, prepared ThemeEvidencePrompt) ([]ThemeEvidence, []ThemeEvidenceAttempt, error) {
 	if prompter == nil {
 		return nil, nil, fmt.Errorf("AI分析底座不可用")
 	}
@@ -268,7 +268,7 @@ func ExtractPreparedThemeEvidence(ctx context.Context, prompter hermes.Prompter,
 	return out, attempts, nil
 }
 
-func ExtractThemeEvidence(ctx context.Context, prompter hermes.Prompter, input Input) ([]ThemeEvidence, error) {
+func ExtractThemeEvidence(ctx context.Context, prompter agent.Prompter, input Input) ([]ThemeEvidence, error) {
 	items, _, err := ExtractPreparedThemeEvidence(ctx, prompter, PrepareThemeEvidencePrompt(input))
 	return items, err
 }

@@ -365,6 +365,8 @@ function buildRuntimeEnv(resourcesRoot) {
     A_STOCK_MARKET_EMOTION_DB: path.join(userData, 'market-emotion.db'),
     A_STOCK_THEME_RADAR_DB: path.join(userData, 'theme-radar.db'),
     A_STOCK_MASTERY_CACHE: path.join(userData, 'trading-mastery'),
+    A_STOCK_CODEX_RUNTIME_ROOT: app.isPackaged ? path.join(resourcesRoot, 'codex-runtime') : process.env.A_STOCK_CODEX_RUNTIME_ROOT || path.join(__dirname, 'resources', 'codex-runtime'),
+    A_STOCK_CODEX_HOME: path.join(userData, 'codex-home'),
     A_STOCK_HERMES_HOME: hermesHome,
     A_STOCK_HERMES_WORKDIR: hermesWorkDir,
     A_STOCK_HERMES_RUNTIME_ROOT: hermesRuntimeRoot,

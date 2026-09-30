@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/appsettings"
-	"easy-stock/backend/internal/hermes"
 )
 
 const llmProbeMarker = "A_STOCK_HERMES_OK"
@@ -23,17 +23,17 @@ type llmConnectionTestResult struct {
 }
 
 func (s *Server) settingsLLMTest(w http.ResponseWriter, r *http.Request) {
-	if s.hermesGateway == nil {
-		writeError(w, http.StatusServiceUnavailable, "Hermes 模型运行时不可用")
+	if s.agentGateway == nil {
+		writeError(w, http.StatusServiceUnavailable, "Agent 模型运行时不可用")
 		return
 	}
-	status := s.hermesGateway.Status()
+	status := s.agentGateway.Status()
 	if !status.Available {
-		writeError(w, http.StatusServiceUnavailable, firstNonEmpty(status.Message, "Hermes 运行时不可用"))
+		writeError(w, http.StatusServiceUnavailable, firstNonEmpty(status.Message, "Agent 运行时不可用"))
 		return
 	}
 	if !status.Configured {
-		writeError(w, http.StatusPreconditionFailed, firstNonEmpty(status.Message, "请先配置 Hermes 模型"))
+		writeError(w, http.StatusPreconditionFailed, firstNonEmpty(status.Message, "请先配置 Agent 模型"))
 		return
 	}
 
@@ -42,20 +42,29 @@ func (s *Server) settingsLLMTest(w http.ResponseWriter, r *http.Request) {
 	startedAt := time.Now()
 	promptGateway := s.usageGateway
 	if promptGateway == nil {
-		promptGateway = s.hermesGateway
+		promptGateway = s.agentGateway
 	}
-	result, err := hermes.PromptFullyAuthorized(hermes.WithUsageModule(ctx, "settings-model-test"), promptGateway, "这是模型连接探针。请仅回复 "+llmProbeMarker+"，不要添加任何其他文字。")
+	ctx, release, err := agent.BindTask(ctx, promptGateway)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "Hermes 模型连接失败: "+err.Error())
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	defer release()
+	cfg := s.settingsStore.Snapshot().LLM
+	if bound, ok := agent.BoundLLM(ctx); ok {
+		cfg = bound
+	}
+	result, err := agent.PromptUsingOptions(agent.WithUsageModule(ctx, "settings-model-test"), promptGateway, "这是模型连接探针。请仅回复 "+llmProbeMarker+"，不要添加任何其他文字。", agent.PromptOptions{Sandbox: true, DisableTools: true})
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Agent 模型连接失败: "+err.Error())
 		return
 	}
 	content := strings.TrimSpace(result.Content)
 	if !strings.Contains(strings.ToUpper(content), llmProbeMarker) {
-		writeError(w, http.StatusBadGateway, "Hermes 已启动，但模型未返回预期探针标记")
+		writeError(w, http.StatusBadGateway, "Agent 已启动，但模型未返回预期探针标记")
 		return
 	}
 
-	cfg := s.settingsStore.Snapshot().LLM
 	apiMode := strings.TrimSpace(cfg.APIMode)
 	if apiMode == "responses" {
 		apiMode = "codex_responses"
@@ -72,7 +81,7 @@ func (s *Server) settingsLLMTest(w http.ResponseWriter, r *http.Request) {
 		Provider:  firstNonEmpty(strings.TrimSpace(cfg.Provider), "openai"),
 		Model:     strings.TrimSpace(cfg.Model),
 		APIMode:   apiMode,
-		Runtime:   "hermes",
+		Runtime:   agent.RuntimeID(firstNonEmpty(result.Runtime, status.Runtime)),
 		LatencyMS: time.Since(startedAt).Milliseconds(),
 		Response:  truncateRunes(content, 200),
 	}})

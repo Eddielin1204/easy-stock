@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/appsettings"
-	"easy-stock/backend/internal/hermes"
 	"easy-stock/backend/internal/runtimelog"
 )
 
@@ -17,7 +17,7 @@ func TestResearchLiveToolFreeJSON(t *testing.T) {
 	if os.Getenv("EASY_STOCK_LIVE_HERMES") != "1" {
 		t.Skip("explicit live-model opt-in required")
 	}
-	runtime := hermes.NewRuntime(hermes.Config{RuntimeRoot: os.Getenv("A_STOCK_HERMES_RUNTIME_ROOT"), Home: os.Getenv("A_STOCK_HERMES_HOME"), WorkDir: t.TempDir()})
+	runtime := agent.NewHermesRuntime(agent.HermesConfig{RuntimeRoot: os.Getenv("A_STOCK_HERMES_RUNTIME_ROOT"), Home: os.Getenv("A_STOCK_HERMES_HOME"), WorkDir: t.TempDir()})
 	data, err := os.ReadFile(os.Getenv("A_STOCK_SETTINGS_PATH"))
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func TestResearchLiveToolFreeJSON(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	result, err := hermes.PromptUsingOptions(ctx, runtime, `只输出JSON，不要解释，不要调用工具：{"status":"ok","language":"zh"}`, hermes.PromptOptions{Sandbox: true, AutoApprove: true, DisableTools: true})
+	result, err := agent.PromptUsingOptions(ctx, runtime, `只输出JSON，不要解释，不要调用工具：{"status":"ok","language":"zh"}`, agent.PromptOptions{Sandbox: true, AutoApprove: true, DisableTools: true})
 	if err != nil {
 		t.Fatal(err)
 	}

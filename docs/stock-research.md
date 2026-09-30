@@ -43,7 +43,7 @@ AI 先提出关键问题和替代解释，在一次受限补证后形成主判�
 ```sh
 cd backend
 go test ./...
-go test -race ./internal/stockanalysis ./internal/httpapi ./internal/portfolioinspection ./internal/hermes
+go test -race ./internal/stockanalysis ./internal/httpapi ./internal/portfolioinspection ./internal/agent
 cd ..
 npm --workspace frontend run test -- --run
 npm --workspace frontend run build

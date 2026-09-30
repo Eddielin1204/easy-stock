@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { prepareHermesRuntime } from './hermes-runtime.mjs';
+import { prepareCodexRuntime, codexExecutable } from './codex-runtime.mjs';
+import { prepareHermesRuntime, hermesRuntimePython } from './hermes-runtime.mjs';
 import { prepareWechatRuntime } from './wechat-runtime.mjs';
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -24,12 +25,17 @@ run('go', ['build', '-trimpath', '-o', path.join(resourcesRoot, 'backend', backe
 fs.cpSync(path.join(repoRoot, 'frontend', 'dist'), path.join(resourcesRoot, 'frontend', 'dist'), { recursive: true });
 prepareAgentBrowser();
 
+const codexManifest = await prepareCodexRuntime({ runtimeRoot: path.join(resourcesRoot, 'codex-runtime') });
 const manifest = prepareHermesRuntime({ runtimeRoot: path.join(resourcesRoot, 'hermes-runtime') });
 const wechatManifest = prepareWechatRuntime({
 	resourcesRoot,
 	runtimeRoot: path.join(resourcesRoot, 'hermes-runtime'),
 });
-console.log(`Desktop resources ready: Hermes ${manifest.version} (${manifest.mode}), WeChat API ${wechatManifest.revision.slice(0, 12)}`);
+run('go', ['test', './internal/agent', '-run', 'TestCodexNative|TestBuiltinMCP', '-count=1'], path.join(repoRoot, 'backend'), {
+    EASY_STOCK_CODEX_TEST_BINARY: codexExecutable(path.join(resourcesRoot, 'codex-runtime')),
+    EASY_STOCK_HERMES_TEST_PYTHON: hermesRuntimePython(path.join(resourcesRoot, 'hermes-runtime')),
+});
+console.log(`Desktop resources ready: Codex ${codexManifest.version}, Hermes ${manifest.version} (${manifest.mode}), WeChat API ${wechatManifest.revision.slice(0, 12)}`);
 
 function prepareAgentBrowser() {
 	const packageRoot = path.join(repoRoot, 'node_modules', 'agent-browser');

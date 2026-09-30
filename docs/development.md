@@ -97,7 +97,7 @@ npm run dev:frontend
 npm run dev:desktop
 ```
 
-Electron 会自动选择本机空闲端口、生成一次性 Token，并启动 Go 后端。若 `desktop/bin/easy-stock-backend` 不存在，开发模式会使用 `go run ./cmd/server`。
+桌面开发命令会先重新构建 Go 后端，避免继续使用旧二进制。Electron 会自动选择本机空闲端口、生成一次性 Token，并启动 Go 后端。运行中修改后端代码后，需要重新执行该命令；只刷新前端不会更新已运行的后端进程。若直接启动 Electron 且 `desktop/bin/easy-stock-backend` 不存在，开发模式会使用 `go run ./cmd/server`。
 
 ## 项目结构
 

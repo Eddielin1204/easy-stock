@@ -1,4 +1,4 @@
-package hermes
+package agent
 
 import (
 	"context"
@@ -70,7 +70,7 @@ func TestPreparePromptSandboxUsesMinimalConfigAndToolsets(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, "config.yaml"), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	runtime := NewRuntime(Config{Home: home})
+	runtime := NewHermesRuntime(HermesConfig{Home: home})
 	sandbox, err := runtime.preparePromptSandbox(PromptOptions{
 		Sandbox:  true,
 		Toolsets: []string{"code_execution", "web", "web"},
@@ -123,7 +123,7 @@ func TestPreparePromptSandboxUsesCurrentResponseTimeout(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("{}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	runtime := NewRuntime(Config{Home: home})
+	runtime := NewHermesRuntime(HermesConfig{Home: home})
 	runtime.llm.ResponseTimeoutSeconds = 600
 	t.Setenv(staleTimeoutEnvName, "90")
 
@@ -146,7 +146,7 @@ func TestPreparePromptSandboxUsesCurrentResponseTimeout(t *testing.T) {
 }
 
 func TestPreparePromptSandboxRejectsToolsOutsideAllowlist(t *testing.T) {
-	runtime := NewRuntime(Config{Home: t.TempDir()})
+	runtime := NewHermesRuntime(HermesConfig{Home: t.TempDir()})
 	_, err := runtime.preparePromptSandbox(PromptOptions{Sandbox: true, Toolsets: []string{"terminal"}})
 	if err == nil || !strings.Contains(err.Error(), "不允许工具集") {
 		t.Fatalf("preparePromptSandbox() error = %v, want rejected toolset", err)
@@ -158,7 +158,7 @@ func TestPreparePromptSandboxCanDisableAllTools(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("{}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	runtime := NewRuntime(Config{Home: home})
+	runtime := NewHermesRuntime(HermesConfig{Home: home})
 	sandbox, err := runtime.preparePromptSandbox(PromptOptions{Sandbox: true, DisableTools: true})
 	if err != nil {
 		t.Fatal(err)
@@ -183,7 +183,7 @@ func TestSandboxSiteCustomizeBlocksHostFilesAndSubprocesses(t *testing.T) {
 	if err := os.WriteFile(hostFile, []byte("private"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	runtime := NewRuntime(Config{Home: t.TempDir()})
+	runtime := NewHermesRuntime(HermesConfig{Home: t.TempDir()})
 	sandbox, err := runtime.preparePromptSandbox(PromptOptions{Sandbox: true})
 	if err != nil {
 		t.Fatal(err)
@@ -276,7 +276,7 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.compl
 		t.Fatal(err)
 	}
 	t.Setenv("APPROVAL_CAPTURE_PATH", capturePath)
-	runtime := NewRuntime(Config{Home: home, WorkDir: root, PythonPath: launcher})
+	runtime := NewHermesRuntime(HermesConfig{Home: home, WorkDir: root, PythonPath: launcher})
 	runtime.configured = true
 	runtime.hasAPIKey = true
 
@@ -334,7 +334,7 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.compl
 		t.Fatal(err)
 	}
 	t.Setenv("APPROVAL_CAPTURE_PATH", capturePath)
-	runtime := NewRuntime(Config{Home: home, WorkDir: root, PythonPath: launcher})
+	runtime := NewHermesRuntime(HermesConfig{Home: home, WorkDir: root, PythonPath: launcher})
 	runtime.configured = true
 	runtime.hasAPIKey = true
 

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"easy-stock/backend/internal/hermes"
+	"easy-stock/backend/internal/agent"
 )
 
 const dailyValidationPromptVersion = "daily-viewpoint-validation-v1"
@@ -478,7 +478,7 @@ type dailyValidationAIModel struct {
 	RealizedRisks   []string `json:"realized_risks"`
 }
 
-func EnrichDailyValidationWithAI(ctx context.Context, prompter hermes.Prompter, summary DailySummary, snapshot DailyValidationSnapshot, validation *DailyValidation) error {
+func EnrichDailyValidationWithAI(ctx context.Context, prompter agent.Prompter, summary DailySummary, snapshot DailyValidationSnapshot, validation *DailyValidation) error {
 	if prompter == nil || validation == nil {
 		return errors.New("验证解释器不可用")
 	}
@@ -500,7 +500,7 @@ func EnrichDailyValidationWithAI(ctx context.Context, prompter hermes.Prompter, 
 5. 只返回严格JSON：{"headline":"...","actual_scenario":"base|strong|weak","scenario_verdict":"correct|partial|wrong|unverified","scenario_summary":"...","market_summary":"...","lessons":["..."],"realized_risks":["..."]}
 
 输入JSON：` + string(data)
-	result, err := hermes.PromptFullyAuthorized(hermes.WithUsageModule(ctx, "review-validation"), prompter, prompt)
+	result, err := agent.PromptFullyAuthorized(agent.WithUsageModule(ctx, "review-validation"), prompter, prompt)
 	if err != nil {
 		return err
 	}

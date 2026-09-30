@@ -1,4 +1,4 @@
-package hermes
+package agent
 
 import (
 	"encoding/json"
@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"easy-stock/backend/internal/appsettings"
 )
@@ -24,6 +25,11 @@ func TestOfficialReasoningCapabilities(t *testing.T) {
 		want             []string
 	}{
 		{"glm-5.3-flash", "https://open.bigmodel.cn/api/paas/v4", "chat_completions", []string{"low", "high", "max"}},
+		{"glm-5.3-flash", "https://open.bigmodel.cn/api/v1", "codex_responses", []string{"low", "high", "max"}},
+		{"glm-5.3", "https://open.bigmodel.cn/api/v1/", "responses", []string{"low", "high", "max"}},
+		{"glm-5.3-flash", "https://open.bigmodel.cn/api/paas/v4", "codex_responses", []string{"default"}},
+		{"glm-5.3-flash", "https://proxy.example/v1", "codex_responses", []string{"default"}},
+		{"glm-5-turbo", "https://open.bigmodel.cn/api/v1", "codex_responses", []string{"default"}},
 		{"GLM-5.3-FLASH", "https://open.bigmodel.cn/api/coding/paas/v4", "chat_completions", []string{"low", "high", "max"}},
 		{"glm-5.2", "https://open.bigmodel.cn/api/paas/v4", "chat_completions", []string{"none", "high", "max"}},
 		{"glm-4.7", "https://open.bigmodel.cn/api/paas/v4", "chat_completions", []string{"none", "enabled"}},
@@ -45,8 +51,69 @@ func TestOfficialReasoningCapabilities(t *testing.T) {
 	}
 }
 
+func TestResponsesModelReasoningMetadata(t *testing.T) {
+	metadata := json.RawMessage(`{"slug":"custom-model","default_reasoning_level":"max","supported_reasoning_levels":[{"effort":"low"},{"effort":"high"},{"effort":"max"},{"effort":"max"}]}`)
+	for _, mode := range []string{"responses", "codex_responses"} {
+		c, ok := DiscoveredModelReasoningCapability(mode, metadata)
+		if !ok || c.Source != "model_api" || c.Wire != "openai_responses" || c.Default != "max" || !reflect.DeepEqual(optionValues(c), []string{"low", "high", "max"}) {
+			t.Fatalf("native metadata ignored: %+v", c)
+		}
+		r := NewHermesRuntime(HermesConfig{Home: t.TempDir()})
+		resolved, err := r.ResolveModelCapabilities("https://custom.example/v1", mode, map[string]json.RawMessage{"custom-model": metadata})
+		if err != nil || !reflect.DeepEqual(resolved["custom-model"], c) {
+			t.Fatalf("resolver dropped native metadata: %v %v", resolved, err)
+		}
+	}
+	for _, mode := range []string{"chat_completions", "anthropic_messages", "auto"} {
+		if _, ok := DiscoveredModelReasoningCapability(mode, metadata); ok {
+			t.Fatalf("Responses metadata leaked into %s", mode)
+		}
+	}
+	for _, raw := range []string{`{}`, `{"supports_reasoning_summaries":true}`, `{"supported_reasoning_levels":null}`, `{"supported_reasoning_levels":[{"effort":"invented"}]}`} {
+		if _, ok := DiscoveredModelReasoningCapability("responses", json.RawMessage(raw)); ok {
+			t.Fatalf("invented levels from %s", raw)
+		}
+	}
+	c, ok := DiscoveredModelReasoningCapability("responses", json.RawMessage(`{"default_reasoning_level":"max","supported_reasoning_levels":[]}`))
+	if !ok || !reflect.DeepEqual(optionValues(c), []string{"default"}) {
+		t.Fatal("an explicitly empty catalog should not offer effort choices")
+	}
+	c, ok = DiscoveredModelReasoningCapability("anthropic_messages", json.RawMessage(`{"capabilities":`+anthropicCapabilityFixture+`}`))
+	if !ok || c.Wire != "anthropic" {
+		t.Fatal("Anthropic discovery regressed")
+	}
+}
+
+func TestGLMResponsesRefreshesLegacyUnknownCapability(t *testing.T) {
+	home := t.TempDir()
+	cfg := appsettings.LLM{Model: "glm-5.3-flash", BaseURL: "https://open.bigmodel.cn/api/v1", APIMode: "codex_responses"}
+	cache := map[string]capabilityCacheEntry{capabilityKey(cfg.BaseURL, cfg.APIMode): {BridgeVersion: 2, Updated: time.Now(), Models: map[string]ReasoningCapability{cfg.Model: reasoningCapability("unknown", "", "legacy", "default", "default")}}}
+	data, _ := json.Marshal(cache)
+	if err := os.WriteFile(filepath.Join(home, "model-capabilities.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := NewHermesRuntime(HermesConfig{Home: home})
+	if err := r.SyncLLM(cfg, nil); err != nil {
+		t.Fatal(err)
+	}
+	s, err := r.AgentSettings()
+	if err != nil || s.ReasoningEffort != "max" || !s.Reasoning.Allows("low") || s.Reasoning.Wire != "openai_responses" {
+		t.Fatalf("legacy unknown survived: %+v err=%v", s.Reasoning, err)
+	}
+	for _, effort := range []string{"low", "high", "max"} {
+		s.ReasoningEffort = effort
+		if err := r.SyncAgentSettings(s); err != nil {
+			t.Fatal(err)
+		}
+		saved, err := NewHermesRuntime(HermesConfig{Home: home}).AgentSettings()
+		if err != nil || saved.ReasoningEffort != effort {
+			t.Fatalf("effort %s did not survive reopening: %v", effort, err)
+		}
+	}
+}
+
 func TestReasoningMigrationValidationAndModelSwitch(t *testing.T) {
-	r := NewRuntime(Config{Home: t.TempDir()})
+	r := NewHermesRuntime(HermesConfig{Home: t.TempDir()})
 	cfg := appsettings.LLM{Provider: "zhipu", BaseURL: "https://open.bigmodel.cn/api/paas/v4", Model: "glm-5.3-flash", APIMode: "chat_completions"}
 	// An old seven-level selection must not survive as an invalid wire value.
 	if err := os.WriteFile(filepath.Join(r.home, "config.yaml"), []byte("agent:\n  reasoning_effort: xhigh\n"), 0600); err != nil {
@@ -121,7 +188,7 @@ func TestDiscoveredCapabilitiesPersistAndStayRouteScoped(t *testing.T) {
 		}
 	}
 	home := t.TempDir()
-	r := NewRuntime(Config{Home: home})
+	r := NewHermesRuntime(HermesConfig{Home: home})
 	cfg := appsettings.LLM{Provider: "anthropic", BaseURL: "https://api.anthropic.com", Model: "claude-from-api", APIMode: "anthropic_messages"}
 	if err := r.SyncLLM(cfg, nil); err != nil {
 		t.Fatal(err)
@@ -129,7 +196,7 @@ func TestDiscoveredCapabilitiesPersistAndStayRouteScoped(t *testing.T) {
 	if err := r.SyncModelCapabilities(cfg.BaseURL, cfg.APIMode, map[string]ReasoningCapability{cfg.Model: c}); err != nil {
 		t.Fatal(err)
 	}
-	restarted := NewRuntime(Config{Home: home})
+	restarted := NewHermesRuntime(HermesConfig{Home: home})
 	s, err := restarted.AgentSettings()
 	if err != nil {
 		t.Fatal(err)
@@ -156,7 +223,7 @@ func TestBundledReasoningBridge(t *testing.T) {
 	if python == "" {
 		t.Skip("set HERMES_TEST_PYTHON to the bundled runtime Python")
 	}
-	r := NewRuntime(Config{Home: t.TempDir(), PythonPath: python})
+	r := NewHermesRuntime(HermesConfig{Home: t.TempDir(), PythonPath: python})
 	caps, err := r.ResolveModelCapabilities("https://api.deepseek.com/v1", "chat_completions", map[string]json.RawMessage{"deepseek-v4-pro": nil})
 	if err != nil {
 		t.Fatal(err)
@@ -172,10 +239,17 @@ func TestBundledReasoningBridge(t *testing.T) {
 	if c = caps["glm-5.3-flash"]; c.Profile != "zai" || !reflect.DeepEqual(optionValues(c), []string{"low", "high", "max"}) {
 		t.Fatalf("documented supplement: %+v", c)
 	}
+	caps, err = r.ResolveModelCapabilities("https://open.bigmodel.cn/api/v1", "codex_responses", map[string]json.RawMessage{"glm-5.3-flash": nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c = caps["glm-5.3-flash"]; c.Profile != "custom" || c.Wire != "openai_responses" || c.Default != "max" || !reflect.DeepEqual(optionValues(c), []string{"low", "high", "max"}) {
+		t.Fatalf("Responses supplement used the wrong wire: %+v", c)
+	}
 }
 
 func TestResponsesDisableSurvivesIsolatedConfig(t *testing.T) {
-	r := NewRuntime(Config{Home: t.TempDir()})
+	r := NewHermesRuntime(HermesConfig{Home: t.TempDir()})
 	cfg := appsettings.LLM{Provider: "openai", BaseURL: "https://api.openai.com/v1", Model: "gpt-5.5", APIMode: "codex_responses"}
 	if err := r.SyncLLM(cfg, nil); err != nil {
 		t.Fatal(err)

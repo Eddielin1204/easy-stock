@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"easy-stock/backend/internal/foundation"
-	"easy-stock/backend/internal/hermes"
+	"easy-stock/backend/internal/agent"
 )
 
 func TestAnalyzeNewListingWithOneTradingDay(t *testing.T) {
@@ -1198,33 +1198,33 @@ type stagedStockPrompter struct {
 type optionsStockPrompter struct {
 	content string
 	prompts []string
-	options []hermes.PromptOptions
+	options []agent.PromptOptions
 }
 
-func (p *optionsStockPrompter) Prompt(_ context.Context, prompt string) (hermes.PromptResult, error) {
+func (p *optionsStockPrompter) Prompt(_ context.Context, prompt string) (agent.PromptResult, error) {
 	p.prompts = append(p.prompts, prompt)
-	return hermes.PromptResult{Content: p.content}, nil
+	return agent.PromptResult{Content: p.content}, nil
 }
 
-func (p *optionsStockPrompter) PromptWithOptions(_ context.Context, prompt string, options hermes.PromptOptions) (hermes.PromptResult, error) {
+func (p *optionsStockPrompter) PromptWithOptions(_ context.Context, prompt string, options agent.PromptOptions) (agent.PromptResult, error) {
 	p.prompts = append(p.prompts, prompt)
 	p.options = append(p.options, options)
-	return hermes.PromptResult{Content: p.content}, nil
+	return agent.PromptResult{Content: p.content}, nil
 }
 
-func (p *stagedStockPrompter) Prompt(_ context.Context, prompt string) (hermes.PromptResult, error) {
+func (p *stagedStockPrompter) Prompt(_ context.Context, prompt string) (agent.PromptResult, error) {
 	p.prompts = append(p.prompts, prompt)
 	if p.index >= len(p.contents) {
-		return hermes.PromptResult{Content: `{}`}, nil
+		return agent.PromptResult{Content: `{}`}, nil
 	}
 	content := p.contents[p.index]
 	p.index++
-	return hermes.PromptResult{Content: content}, nil
+	return agent.PromptResult{Content: content}, nil
 }
 
-func (p fakeStockPrompter) Prompt(_ context.Context, prompt string) (hermes.PromptResult, error) {
+func (p fakeStockPrompter) Prompt(_ context.Context, prompt string) (agent.PromptResult, error) {
 	if p.prompt != nil {
 		*p.prompt = prompt
 	}
-	return hermes.PromptResult{Content: p.content}, nil
+	return agent.PromptResult{Content: p.content}, nil
 }

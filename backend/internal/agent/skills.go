@@ -1,4 +1,4 @@
-package hermes
+package agent
 
 import (
 	"archive/zip"
@@ -30,7 +30,7 @@ type InstalledSkill struct {
 	Path   string `json:"path"`
 }
 
-func (r *Runtime) ImportSkills(files []SkillImportFile) ([]InstalledSkill, error) {
+func (r *HermesRuntime) ImportSkills(files []SkillImportFile) ([]InstalledSkill, error) {
 	if strings.TrimSpace(r.home) == "" {
 		return nil, errors.New("Hermes Home 未配置")
 	}
@@ -125,7 +125,7 @@ type stagedSkill struct {
 // DeleteSkill removes an installed skill directory from <home>/skills and
 // drops the skill from the config disabled list so the next settings read no
 // longer reports it.
-func (r *Runtime) DeleteSkill(name string) error {
+func (r *HermesRuntime) DeleteSkill(name string) error {
 	name = strings.TrimSpace(name)
 	if strings.TrimSpace(r.home) == "" {
 		return errors.New("Hermes Home 未配置")

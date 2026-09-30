@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/foundation"
-	"easy-stock/backend/internal/hermes"
 	"easy-stock/backend/internal/portfolioinspection"
 	"easy-stock/backend/internal/runtimelog"
 	"easy-stock/backend/internal/stockanalysis"
@@ -37,6 +37,15 @@ func (s *Server) awaitStockResearch(ctx context.Context, request stockanalysis.R
 }
 
 func (s *Server) runStockResearch(ctx context.Context, request stockanalysis.ResearchRequest, publish stockanalysis.ResearchPublisher) (stockanalysis.Analysis, *stockanalysis.ResearchSnapshot, error) {
+	promptGateway := s.usageGateway
+	if promptGateway == nil {
+		promptGateway = s.agentGateway
+	}
+	ctx, release, bindErr := agent.BindTask(ctx, promptGateway)
+	if bindErr != nil {
+		return stockanalysis.Analysis{}, nil, bindErr
+	}
+	defer release()
 	if err := publish("collecting", "正在采集行情、公告和研究资料", nil, nil); err != nil {
 		return stockanalysis.Analysis{}, nil, err
 	}
@@ -56,7 +65,11 @@ func (s *Server) runStockResearch(ctx context.Context, request stockanalysis.Res
 	if request.AnalysisLevel == stockanalysis.ResearchLevelQuantitative {
 		return provisional, snapshot, nil
 	}
-	if s.hermesGateway == nil || !s.hermesGateway.Status().Available || !s.hermesGateway.Status().Configured {
+	runtimeStatus, bound := agent.BoundStatus(ctx)
+	if !bound && s.agentGateway != nil {
+		runtimeStatus = s.agentGateway.Status()
+	}
+	if s.agentGateway == nil || !runtimeStatus.Available || !runtimeStatus.Configured {
 		analysis.AI.Status = "unavailable"
 		analysis.AI.Message = "模型不可用，当前只展示量化快照，没有AI研究结论"
 		return stockanalysis.QuantitativeOnly(analysis), snapshot, nil
@@ -67,6 +80,9 @@ func (s *Server) runStockResearch(ctx context.Context, request stockanalysis.Res
 		values := s.settingsStore.Snapshot()
 		model = values.LLM.Model
 		modelIdentity = s.stockResearchModelIdentity()
+	}
+	if frozen := agent.BoundModel(ctx); frozen != "" {
+		model = frozen
 	}
 	modelCtx, cancel := context.WithTimeout(ctx, stockanalysis.ResearchTotalTimeout(request))
 	defer cancel()
@@ -80,14 +96,10 @@ func (s *Server) runStockResearch(ctx context.Context, request stockanalysis.Res
 			cancel()
 		}
 	}
-	promptGateway := s.usageGateway
-	if promptGateway == nil {
-		promptGateway = s.hermesGateway
-	}
 	guarded := researchPrompter{prompter: promptGateway, request: request, onCall: func(stage string, startedAt time.Time, promptBytes, responseBytes int, err error) {
 		s.logStockResearchModelCall(request.Symbol, request.AnalysisLevel, stage, startedAt, promptBytes, responseBytes, err)
 	}, consistent: func() bool {
-		if s.settingsStore == nil {
+		if agent.BoundRuntime(ctx) != "" || s.settingsStore == nil {
 			return true
 		}
 		return modelIdentity == s.stockResearchModelIdentity()
@@ -97,7 +109,7 @@ func (s *Server) runStockResearch(ctx context.Context, request stockanalysis.Res
 		return stockanalysis.QuantitativeOnly(baseline), snapshot, persistenceErr
 	}
 	if s.settingsStore != nil {
-		if modelIdentity != s.stockResearchModelIdentity() {
+		if agent.BoundRuntime(ctx) == "" && modelIdentity != s.stockResearchModelIdentity() {
 			err = fmt.Errorf("分析过程中模型配置发生变化，请重新分析以保留一致的模型记录")
 			analysis.ResearchReport = nil
 		}
@@ -116,36 +128,36 @@ func (s *Server) stockResearchModelIdentity() string {
 		return ""
 	}
 	values := s.settingsStore.Snapshot()
-	encoded, _ := json.Marshal([]string{values.ActiveLLMProfileID, values.LLM.Provider, values.LLM.BaseURL, values.LLM.Model, values.LLM.APIMode})
+	encoded, _ := json.Marshal([]string{values.AgentRuntime, values.ActiveLLMProfileID, values.LLM.Provider, values.LLM.BaseURL, values.LLM.Model, values.LLM.APIMode})
 	return string(encoded)
 }
 
 // Keep per-call time and model identity bounded without losing tool-free options.
 type researchPrompter struct {
-	prompter   hermes.Prompter
+	prompter   agent.Prompter
 	request    stockanalysis.ResearchRequest
 	onCall     func(string, time.Time, int, int, error)
 	consistent func() bool
 }
 
-func (p researchPrompter) Prompt(ctx context.Context, prompt string) (hermes.PromptResult, error) {
-	return p.PromptWithOptions(ctx, prompt, hermes.PromptOptions{Sandbox: true, AutoApprove: true, DisableTools: true})
+func (p researchPrompter) Prompt(ctx context.Context, prompt string) (agent.PromptResult, error) {
+	return p.PromptWithOptions(ctx, prompt, agent.PromptOptions{Sandbox: true, AutoApprove: true, DisableTools: true})
 }
 
-func (p researchPrompter) PromptWithOptions(ctx context.Context, prompt string, options hermes.PromptOptions) (hermes.PromptResult, error) {
+func (p researchPrompter) PromptWithOptions(ctx context.Context, prompt string, options agent.PromptOptions) (agent.PromptResult, error) {
 	if !p.consistent() {
-		return hermes.PromptResult{}, fmt.Errorf("研究期间模型配置发生变化")
+		return agent.PromptResult{}, fmt.Errorf("研究期间模型配置发生变化")
 	}
 	callCtx, cancel := context.WithTimeout(ctx, stockanalysis.ResearchStageTimeout(p.request))
 	defer cancel()
-	callCtx = hermes.WithUsageModule(callCtx, "stock-analysis")
+	callCtx = agent.WithUsageModule(callCtx, "stock-analysis")
 	startedAt := time.Now()
-	result, err := hermes.PromptUsingOptions(callCtx, p.prompter, prompt, options)
+	result, err := agent.PromptUsingOptions(callCtx, p.prompter, prompt, options)
 	if p.onCall != nil {
 		p.onCall(researchPromptStage(prompt), startedAt, len([]byte(prompt)), len([]byte(result.Content)), err)
 	}
 	if !p.consistent() {
-		return hermes.PromptResult{}, fmt.Errorf("研究期间模型配置发生变化")
+		return agent.PromptResult{}, fmt.Errorf("研究期间模型配置发生变化")
 	}
 	return result, err
 }

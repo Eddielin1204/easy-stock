@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildHermesWebSocketURL, streamHermesPrompt } from './hermes';
+import { buildAgentWebSocketURL, streamAgentPrompt } from './agent';
 
 class FakeWebSocket {
 	static CONNECTING = 0;
@@ -24,12 +24,12 @@ afterEach(() => {
 	FakeWebSocket.instances = [];
 });
 
-describe('Hermes TUI gateway client', () => {
+describe('Agent TUI gateway client', () => {
 	it('streams reasoning separately and reconciles the final snapshot without duplication', async () => {
 		vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
 		const onReasoning = vi.fn();
 		const onDelta = vi.fn();
-		const promise = streamHermesPrompt({ config: { backendUrl: 'http://localhost', token: '' }, prompt: '测试', onReasoning, onDelta });
+		const promise = streamAgentPrompt({ config: { backendUrl: 'http://localhost', token: '' }, prompt: '测试', onReasoning, onDelta });
 		const socket = FakeWebSocket.instances[0]; socket.open();
 		socket.receive({ method: 'event', params: { type: 'reasoning.delta', payload: { text: '\n先检查' } } });
 		socket.receive({ method: 'event', params: { type: 'reasoning.delta', payload: { text: ' 数据。\n' } } });
@@ -44,7 +44,7 @@ describe('Hermes TUI gateway client', () => {
 	it('supports reasoning returned only with the final response', async () => {
 		vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
 		const onReasoning = vi.fn();
-		const promise = streamHermesPrompt({ config: { backendUrl: 'http://localhost', token: '' }, prompt: '测试', onReasoning });
+		const promise = streamAgentPrompt({ config: { backendUrl: 'http://localhost', token: '' }, prompt: '测试', onReasoning });
 		const socket = FakeWebSocket.instances[0]; socket.open();
 		socket.receive({ method: 'event', params: { type: 'message.complete', payload: { text: '最终回复', reasoning: '已核对相关数据。' } } });
 		await expect(promise).resolves.toMatchObject({ reasoning: '已核对相关数据。' });
@@ -54,7 +54,7 @@ describe('Hermes TUI gateway client', () => {
 	it('keeps reasoning across tool rounds when the final snapshot covers only the last round', async () => {
 		vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
 		const onReasoning = vi.fn();
-		const promise = streamHermesPrompt({ config: { backendUrl: 'http://localhost', token: '' }, prompt: '测试', onReasoning });
+		const promise = streamAgentPrompt({ config: { backendUrl: 'http://localhost', token: '' }, prompt: '测试', onReasoning });
 		const socket = FakeWebSocket.instances[0]; socket.open();
 		socket.receive({ method: 'event', params: { type: 'reasoning.delta', payload: { text: '先查询数据。' } } });
 		socket.receive({ method: 'event', params: { type: 'tool.start', payload: { name: '查询行情' } } });
@@ -69,20 +69,20 @@ describe('Hermes TUI gateway client', () => {
 		vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
 		const onReasoning = vi.fn();
 		const onStatus = vi.fn();
-		const promise = streamHermesPrompt({ config: { backendUrl: 'http://localhost', token: '' }, prompt: '测试', onReasoning, onStatus });
+		const promise = streamAgentPrompt({ config: { backendUrl: 'http://localhost', token: '' }, prompt: '测试', onReasoning, onStatus });
 		const socket = FakeWebSocket.instances[0]; socket.open();
 		socket.receive({ method: 'event', params: { type: 'thinking.delta', payload: { text: 'Waiting for provider…' } } });
 		expect(onStatus).toHaveBeenLastCalledWith({ kind: 'process', text: 'Waiting for provider…' });
 		socket.receive({ method: 'event', params: { type: 'reasoning.available', payload: { text: '你好！' } } });
 		socket.receive({ method: 'event', params: { type: 'message.complete', payload: { text: '你好！' } } });
-		await expect(promise).resolves.toEqual({ content: '你好！', hermesSessionID: '' });
+		await expect(promise).resolves.toEqual({ content: '你好！', agentSessionID: '' });
 		expect(onReasoning).not.toHaveBeenCalled();
 	});
 
-	it('ends the wait on a Hermes error event and ignores late reasoning', async () => {
+	it('ends the wait on a Agent error event and ignores late reasoning', async () => {
 		vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
 		const onReasoning = vi.fn();
-		const promise = streamHermesPrompt({ config: { backendUrl: 'http://localhost', token: '' }, prompt: '测试', onReasoning });
+		const promise = streamAgentPrompt({ config: { backendUrl: 'http://localhost', token: '' }, prompt: '测试', onReasoning });
 		const socket = FakeWebSocket.instances[0]; socket.open();
 		socket.receive({ method: 'event', params: { type: 'error', payload: { message: 'agent init failed' } } });
 		await expect(promise).rejects.toThrow('agent init failed');
@@ -91,15 +91,15 @@ describe('Hermes TUI gateway client', () => {
 	});
 
 	it('builds an authenticated backend websocket URL', () => {
-		expect(buildHermesWebSocketURL({ backendUrl: 'https://127.0.0.1:20001', token: 'desktop token' }))
+		expect(buildAgentWebSocketURL({ backendUrl: 'https://127.0.0.1:20001', token: 'desktop token' }))
 			.toBe('wss://127.0.0.1:20001/api/v1/ai/ws?token=desktop+token');
 	});
 
-	it('creates a Hermes session, streams text, and keeps the stored session id', async () => {
+	it('creates a Agent session, streams text, and keeps the stored session id', async () => {
 		vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
 		const deltas: string[] = [];
 		const usageReports: Array<{ prompt_tokens: number; completion_tokens: number; total_tokens: number; model: string }> = [];
-		const promise = streamHermesPrompt({
+		const promise = streamAgentPrompt({
 			config: { backendUrl: 'http://127.0.0.1:20001', token: 'token' },
 			prompt: '分析市场拐点',
 			analysisID: 'saved-analysis-1',
@@ -117,17 +117,17 @@ describe('Hermes TUI gateway client', () => {
 		expect(submit).toMatchObject({ method: 'prompt.submit', params: { session_id: 'live-1', text: '分析市场拐点', analysis_id: 'saved-analysis-1' } });
 		socket.receive({ jsonrpc: '2.0', method: 'event', params: { type: 'message.delta', payload: { text: '第一段' } } });
 		socket.receive({ jsonrpc: '2.0', method: 'event', params: { type: 'message.complete', payload: { content: '完整回复', usage: { model: 'kimi-k3', input: 22, output: 8, total: 30 } } } });
-		await expect(promise).resolves.toEqual({ content: '完整回复', hermesSessionID: 'stored-1' });
+		await expect(promise).resolves.toEqual({ content: '完整回复', agentSessionID: 'stored-1' });
 		expect(deltas).toEqual(['第一段', '完整回复']);
 		expect(usageReports).toEqual([{ prompt_tokens: 22, completion_tokens: 8, total_tokens: 30, model: 'kimi-k3' }]);
 	});
 
-	it('falls back to a new session when stored Hermes history no longer exists', async () => {
+	it('falls back to a new session when stored Agent history no longer exists', async () => {
 		vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
-		const promise = streamHermesPrompt({
+		const promise = streamAgentPrompt({
 			config: { backendUrl: 'http://127.0.0.1:20001', token: '' },
 			prompt: '继续',
-			hermesSessionID: 'missing',
+			agentSessionID: 'missing',
 		});
 		const socket = FakeWebSocket.instances[0];
 		socket.open();
@@ -139,13 +139,13 @@ describe('Hermes TUI gateway client', () => {
 		expect(create.method).toBe('session.create');
 		socket.receive({ jsonrpc: '2.0', id: create.id, result: { session_id: 'live-2', stored_session_id: 'stored-2' } });
 		socket.receive({ jsonrpc: '2.0', method: 'event', params: { type: 'message.complete', payload: { content: '继续完成' } } });
-		await expect(promise).resolves.toEqual({ content: '继续完成', hermesSessionID: 'stored-2' });
+		await expect(promise).resolves.toEqual({ content: '继续完成', agentSessionID: 'stored-2' });
 	});
 
 	it('surfaces approval requests and sends the selected choice', async () => {
 		vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
 		let approve: ((choice: 'once' | 'session' | 'deny') => void) | undefined;
-		const promise = streamHermesPrompt({
+		const promise = streamAgentPrompt({
 			config: { backendUrl: 'http://127.0.0.1:20001', token: '' },
 			prompt: '安装技能',
 			onApproval: (_request, respond) => { approve = respond; },
@@ -161,10 +161,10 @@ describe('Hermes TUI gateway client', () => {
 		await expect(promise).resolves.toMatchObject({ content: '已完成' });
 	});
 
-	it('answers Hermes 0.21 server approval requests with the same JSON-RPC id', async () => {
+	it('answers Agent 0.21 server approval requests with the same JSON-RPC id', async () => {
 		vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
 		let approve: ((choice: 'once' | 'session' | 'deny') => void) | undefined;
-		const promise = streamHermesPrompt({
+		const promise = streamAgentPrompt({
 			config: { backendUrl: 'http://127.0.0.1:20001', token: '' },
 			prompt: '安装技能',
 			onApproval: (_request, respond) => { approve = respond; },
@@ -184,7 +184,7 @@ describe('Hermes TUI gateway client', () => {
 		vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
 		let clarify: ((answer: string) => void) | undefined;
 		let received: { question: string; choices: string[]; requestID: string } | undefined;
-		const promise = streamHermesPrompt({
+		const promise = streamAgentPrompt({
 			config: { backendUrl: 'http://127.0.0.1:20001', token: '' },
 			prompt: '分析题材',
 			onClarify: (request, respond) => { received = request; clarify = respond; },
@@ -201,10 +201,10 @@ describe('Hermes TUI gateway client', () => {
 		await expect(promise).resolves.toMatchObject({ content: '已完成' });
 	});
 
-	it('answers batched Hermes 0.21 clarify requests in order', async () => {
+	it('answers batched Agent 0.21 clarify requests in order', async () => {
 		vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
 		const answers: Array<(answer: string) => void> = [];
-		const promise = streamHermesPrompt({
+		const promise = streamAgentPrompt({
 			config: { backendUrl: 'http://127.0.0.1:20001', token: '' },
 			prompt: '分析题材',
 			onClarify: (_request, respond) => { answers.push(respond); },
@@ -228,7 +228,7 @@ describe('Hermes TUI gateway client', () => {
 
 	it('turns an error completion into a rejected request', async () => {
 		vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
-		const promise = streamHermesPrompt({ config: { backendUrl: 'http://127.0.0.1:20001', token: '' }, prompt: '测试' });
+		const promise = streamAgentPrompt({ config: { backendUrl: 'http://127.0.0.1:20001', token: '' }, prompt: '测试' });
 		const socket = FakeWebSocket.instances[0]; socket.open();
 		socket.receive({ jsonrpc: '2.0', method: 'event', params: { type: 'gateway.ready', payload: {} } });
 		const setup = JSON.parse(socket.sent[0]);

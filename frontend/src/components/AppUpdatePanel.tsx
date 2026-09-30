@@ -1,6 +1,7 @@
 import { CheckCircle2, Download, ExternalLink, FolderOpen, HardDriveDownload, LoaderCircle, RefreshCw, RotateCcw, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { AppUpdateStatus } from '../lib/backend';
+import { SettingsSection } from './SettingsSection';
 
 const developmentStatus: AppUpdateStatus = {
 	state: 'disabled',
@@ -55,8 +56,7 @@ export function AppUpdatePanel() {
 			: { label: status.state === 'checking' ? '正在检查' : '检查更新', icon: status.state === 'checking' ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />, action: bridge?.checkForUpdates };
 
 	return (
-		<section className="settings-section app-update-section">
-			<div className="settings-section-title"><HardDriveDownload size={18} /><div><h3>版本与自动更新</h3><p>Windows 支持应用内更新；macOS 未配置 Apple Developer ID 时通过发布页手动下载安装。</p></div></div>
+		<SettingsSection className="app-update-section" title="版本与自动更新" description="Windows 支持应用内更新；macOS 未配置 Apple Developer ID 时通过发布页手动下载安装。" icon={<HardDriveDownload size={18} />}>
 			<div className={`app-update-status ${status.state}`}>
 				<div className="app-update-version">
 					<span><strong>v{status.currentVersion}</strong><small>当前版本</small></span>
@@ -72,7 +72,7 @@ export function AppUpdatePanel() {
 				</div>
 				{status.installMode === 'manual' && status.latestVersion && status.latestVersion !== status.currentVersion && <p className="settings-field-note app-update-manual-note">当前 macOS 安装包未使用 Apple Developer ID 签名，系统暂不允许应用内替换。退出 easy-stock，前往发布页下载新版 DMG 后覆盖安装，不会删除本地模型配置、文章、登录状态或数据库。</p>}
 			</div>
-			<p className="settings-field-note">{status.installMode === 'manual' ? '应用程序与用户数据分开存放，覆盖安装只替换 easy-stock 应用本身，不会清除本地模型密钥、导入文章、AI 摘要、Hermes 记忆、浏览器/微信登录态或数据库。' : '应用内安装前会停止后台同步并在应用数据目录外创建完整备份，保留模型配置与密钥、导入文章、AI 摘要、Hermes 记忆、浏览器/微信登录态及本地数据库；仅排除可重建缓存，最近保留 3 份。'}</p>
-		</section>
+			<p className="settings-field-note">{status.installMode === 'manual' ? '应用程序与用户数据分开存放，覆盖安装只替换 easy-stock 应用本身，不会清除本地模型密钥、导入文章、AI 摘要、Agent 记忆、浏览器/微信登录态或数据库。' : '应用内安装前会停止后台同步并在应用数据目录外创建完整备份，保留模型配置与密钥、导入文章、AI 摘要、Agent 记忆、浏览器/微信登录态及本地数据库；仅排除可重建缓存，最近保留 3 份。'}</p>
+		</SettingsSection>
 	);
 }

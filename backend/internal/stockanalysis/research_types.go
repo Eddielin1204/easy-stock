@@ -172,6 +172,7 @@ type ResearchPromptCompression struct {
 }
 
 type ResearchReport struct {
+	Runtime string `json:"runtime,omitempty"`
 	ResearchSynthesis
 	SnapshotID      string                    `json:"snapshot_id"`
 	SnapshotVersion int                       `json:"snapshot_version"`

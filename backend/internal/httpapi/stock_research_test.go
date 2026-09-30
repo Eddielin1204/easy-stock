@@ -9,18 +9,18 @@ import (
 	"testing"
 	"time"
 
-	"easy-stock/backend/internal/hermes"
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/stockanalysis"
 )
 
 func TestResearchAPIHistorySnapshotAndReportBoundChat(t *testing.T) {
-	gateway := &fakeHermesGateway{status: hermes.Status{Available: true, Configured: true}, promptFunc: func(_ context.Context, prompt string) (hermes.PromptResult, error) {
+	gateway := &fakeAgentGateway{status: agent.Status{Available: true, Configured: true}, promptFunc: func(_ context.Context, prompt string) (agent.PromptResult, error) {
 		if strings.Contains(prompt, "独立提出需要核实的问题") {
-			return hermes.PromptResult{Content: `{"questions":[]}`}, nil
+			return agent.PromptResult{Content: `{"questions":[]}`}, nil
 		}
-		return hermes.PromptResult{Content: validHTTPResearchJSON}, nil
+		return agent.PromptResult{Content: validHTTPResearchJSON}, nil
 	}}
-	server := NewServer(Config{Realtime: stockAnalysisRealtime{}, KLinePrimary: stockAnalysisKLines{}, KLineFallback: stockAnalysisKLines{}, StockBusiness: stockAnalysisBusiness{}, MarketOverview: &fakeMarketOverviewProvider{}, ReviewDBPath: ":memory:", HermesGateway: gateway})
+	server := NewServer(Config{Realtime: stockAnalysisRealtime{}, KLinePrimary: stockAnalysisKLines{}, KLineFallback: stockAnalysisKLines{}, StockBusiness: stockAnalysisBusiness{}, MarketOverview: &fakeMarketOverviewProvider{}, ReviewDBPath: ":memory:", AgentGateway: gateway})
 	defer server.Close()
 	call := func(method, path, body string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
@@ -38,7 +38,8 @@ func TestResearchAPIHistorySnapshotAndReportBoundChat(t *testing.T) {
 	if err := json.Unmarshal(created.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Allow race instrumentation of the quantitative fixture without changing production timeouts.
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	job, err := server.stockResearch.Wait(ctx, response.Data.ID)
 	if err != nil || job.Status != "succeeded" {
@@ -80,16 +81,16 @@ func TestResearchAPIHistorySnapshotAndReportBoundChat(t *testing.T) {
 }
 
 func TestStockResearchRecordsTokenUsageByModule(t *testing.T) {
-	gateway := &fakeHermesGateway{
-		status: hermes.Status{Available: true, Configured: true},
-		promptFunc: func(_ context.Context, prompt string) (hermes.PromptResult, error) {
+	gateway := &fakeAgentGateway{
+		status: agent.Status{Available: true, Configured: true},
+		promptFunc: func(_ context.Context, prompt string) (agent.PromptResult, error) {
 			if strings.Contains(prompt, "独立提出需要核实的问题") {
-				return hermes.PromptResult{Content: `{"questions":[]}`, Usage: hermes.TokenUsage{PromptTokens: 120, CompletionTokens: 30, TotalTokens: 150}}, nil
+				return agent.PromptResult{Content: `{"questions":[]}`, Usage: agent.TokenUsage{PromptTokens: 120, CompletionTokens: 30, TotalTokens: 150}}, nil
 			}
-			return hermes.PromptResult{Content: validHTTPResearchJSON, Usage: hermes.TokenUsage{PromptTokens: 400, CompletionTokens: 100, TotalTokens: 500}}, nil
+			return agent.PromptResult{Content: validHTTPResearchJSON, Usage: agent.TokenUsage{PromptTokens: 400, CompletionTokens: 100, TotalTokens: 500}}, nil
 		},
 	}
-	server := NewServer(Config{Realtime: stockAnalysisRealtime{}, KLinePrimary: stockAnalysisKLines{}, KLineFallback: stockAnalysisKLines{}, StockBusiness: stockAnalysisBusiness{}, MarketOverview: &fakeMarketOverviewProvider{}, ReviewDBPath: ":memory:", HermesGateway: gateway})
+	server := NewServer(Config{Realtime: stockAnalysisRealtime{}, KLinePrimary: stockAnalysisKLines{}, KLineFallback: stockAnalysisKLines{}, StockBusiness: stockAnalysisBusiness{}, MarketOverview: &fakeMarketOverviewProvider{}, ReviewDBPath: ":memory:", AgentGateway: gateway})
 	defer server.Close()
 	created := httptest.NewRequest(http.MethodPost, "/api/v1/stocks/research", strings.NewReader(`{"symbol":"600519","purpose":"observe"}`))
 	response := httptest.NewRecorder()
@@ -103,7 +104,8 @@ func TestStockResearchRecordsTokenUsageByModule(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Allow race instrumentation of the quantitative fixture without changing production timeouts.
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	job, err := server.stockResearch.Wait(ctx, payload.Data.ID)
 	if err != nil || job.Status != "succeeded" {
@@ -128,9 +130,9 @@ func TestResearchChatWithoutStoreRemovesMetadataAndRefusesToInventReport(t *test
 
 func TestResearchModelIdentityGuardPreservesOptions(t *testing.T) {
 	consistent := true
-	gateway := &fakeHermesGateway{promptFunc: func(context.Context, string) (hermes.PromptResult, error) {
+	gateway := &fakeAgentGateway{promptFunc: func(context.Context, string) (agent.PromptResult, error) {
 		consistent = false
-		return hermes.PromptResult{Content: `{"ok":true}`}, nil
+		return agent.PromptResult{Content: `{"ok":true}`}, nil
 	}}
 	p := researchPrompter{prompter: gateway, consistent: func() bool { return consistent }}
 	_, err := p.Prompt(context.Background(), "research")

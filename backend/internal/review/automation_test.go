@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/appsettings"
-	"easy-stock/backend/internal/hermes"
 )
 
 func TestAutomationSyncsWechatSubscription(t *testing.T) {
@@ -920,8 +920,8 @@ func TestAutomationRequiresTaogubaBrowserLoginState(t *testing.T) {
 
 type fakePrompter struct{ content string }
 
-func (p fakePrompter) Prompt(context.Context, string) (hermes.PromptResult, error) {
-	return hermes.PromptResult{Content: p.content}, nil
+func (p fakePrompter) Prompt(context.Context, string) (agent.PromptResult, error) {
+	return agent.PromptResult{Content: p.content}, nil
 }
 
 type recordingPrompter struct {
@@ -961,16 +961,16 @@ type routedSummaryPrompter struct {
 	prompts       []string
 }
 
-func (p *queuedSummaryPrompter) Prompt(_ context.Context, prompt string) (hermes.PromptResult, error) {
+func (p *queuedSummaryPrompter) Prompt(_ context.Context, prompt string) (agent.PromptResult, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.prompts = append(p.prompts, prompt)
 	if p.next >= len(p.responses) {
-		return hermes.PromptResult{}, errors.New("missing queued prompt response")
+		return agent.PromptResult{}, errors.New("missing queued prompt response")
 	}
 	response := p.responses[p.next]
 	p.next++
-	return hermes.PromptResult{Content: response.content}, response.err
+	return agent.PromptResult{Content: response.content}, response.err
 }
 
 func (p *queuedSummaryPrompter) Prompts() []string {
@@ -979,7 +979,7 @@ func (p *queuedSummaryPrompter) Prompts() []string {
 	return append([]string(nil), p.prompts...)
 }
 
-func (p *routedSummaryPrompter) Prompt(_ context.Context, prompt string) (hermes.PromptResult, error) {
+func (p *routedSummaryPrompter) Prompt(_ context.Context, prompt string) (agent.PromptResult, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.prompts = append(p.prompts, prompt)
@@ -994,11 +994,11 @@ func (p *routedSummaryPrompter) Prompt(_ context.Context, prompt string) (hermes
 		index = &p.tomorrowIndex
 	}
 	if *index >= len(*responses) {
-		return hermes.PromptResult{}, errors.New("missing routed prompt response")
+		return agent.PromptResult{}, errors.New("missing routed prompt response")
 	}
 	response := (*responses)[*index]
 	*index++
-	return hermes.PromptResult{Content: response.content}, response.err
+	return agent.PromptResult{Content: response.content}, response.err
 }
 
 func (p *routedSummaryPrompter) Prompts() []string {
@@ -1037,9 +1037,9 @@ type blockingSummaryPrompter struct {
 	finalContent string
 }
 
-func (p *blockingSummaryPrompter) Prompt(ctx context.Context, prompt string) (hermes.PromptResult, error) {
-	if hermes.UsageModule(ctx) != "review-summary" {
-		return hermes.PromptResult{}, fmt.Errorf("background summary lost usage module: %q", hermes.UsageModule(ctx))
+func (p *blockingSummaryPrompter) Prompt(ctx context.Context, prompt string) (agent.PromptResult, error) {
+	if agent.UsageModule(ctx) != "review-summary" {
+		return agent.PromptResult{}, fmt.Errorf("background summary lost usage module: %q", agent.UsageModule(ctx))
 	}
 	if strings.Contains(prompt, "任务阶段：单作者观点归纳") {
 		select {
@@ -1048,32 +1048,32 @@ func (p *blockingSummaryPrompter) Prompt(ctx context.Context, prompt string) (he
 		}
 		select {
 		case <-p.release:
-			return hermes.PromptResult{Content: `{"core_view":"作者最终观点","market_interpretation":"情绪修复","view_evolution":[],"themes":[],"today_surprises":[],"tomorrow_focus":[],"tomorrow_outlook":"等待确认","catalysts":[],"risks":[],"confidence":"中","evidence":[]}`}, nil
+			return agent.PromptResult{Content: `{"core_view":"作者最终观点","market_interpretation":"情绪修复","view_evolution":[],"themes":[],"today_surprises":[],"tomorrow_focus":[],"tomorrow_outlook":"等待确认","catalysts":[],"risks":[],"confidence":"中","evidence":[]}`}, nil
 		case <-ctx.Done():
-			return hermes.PromptResult{}, ctx.Err()
+			return agent.PromptResult{}, ctx.Err()
 		}
 	}
-	return hermes.PromptResult{Content: p.finalContent}, nil
+	return agent.PromptResult{Content: p.finalContent}, nil
 }
 
-func (p *stagedSummaryPrompter) Prompt(_ context.Context, prompt string) (hermes.PromptResult, error) {
+func (p *stagedSummaryPrompter) Prompt(_ context.Context, prompt string) (agent.PromptResult, error) {
 	p.mu.Lock()
 	p.prompts = append(p.prompts, prompt)
 	p.mu.Unlock()
 	if strings.Contains(prompt, "任务阶段：单作者观点归纳") {
 		for author, err := range p.authorErrors {
 			if strings.Contains(prompt, "作者："+author+"\n") {
-				return hermes.PromptResult{}, err
+				return agent.PromptResult{}, err
 			}
 		}
 		for author, content := range p.authorContent {
 			if strings.Contains(prompt, "作者："+author+"\n") {
-				return hermes.PromptResult{Content: content}, nil
+				return agent.PromptResult{Content: content}, nil
 			}
 		}
-		return hermes.PromptResult{}, errors.New("missing staged author response")
+		return agent.PromptResult{}, errors.New("missing staged author response")
 	}
-	return hermes.PromptResult{Content: p.finalContent}, nil
+	return agent.PromptResult{Content: p.finalContent}, nil
 }
 
 func (p *stagedSummaryPrompter) Prompts() []string {
@@ -1082,10 +1082,10 @@ func (p *stagedSummaryPrompter) Prompts() []string {
 	return append([]string(nil), p.prompts...)
 }
 
-func (p *recordingPrompter) Prompt(ctx context.Context, prompt string) (hermes.PromptResult, error) {
+func (p *recordingPrompter) Prompt(ctx context.Context, prompt string) (agent.PromptResult, error) {
 	p.prompt = prompt
-	p.modules = append(p.modules, hermes.UsageModule(ctx))
-	return hermes.PromptResult{Content: p.content}, nil
+	p.modules = append(p.modules, agent.UsageModule(ctx))
+	return agent.PromptResult{Content: p.content}, nil
 }
 
 type fakeBrowserPrompter struct {
@@ -1095,13 +1095,13 @@ type fakeBrowserPrompter struct {
 	module    string
 }
 
-func (p *fakeBrowserPrompter) Prompt(context.Context, string) (hermes.PromptResult, error) {
-	return hermes.PromptResult{Content: p.content}, nil
+func (p *fakeBrowserPrompter) Prompt(context.Context, string) (agent.PromptResult, error) {
+	return agent.PromptResult{Content: p.content}, nil
 }
 
-func (p *fakeBrowserPrompter) PromptWithBrowserState(ctx context.Context, prompt, statePath string) (hermes.PromptResult, error) {
+func (p *fakeBrowserPrompter) PromptWithBrowserState(ctx context.Context, prompt, statePath string) (agent.PromptResult, error) {
 	p.prompt = prompt
 	p.statePath = statePath
-	p.module = hermes.UsageModule(ctx)
-	return hermes.PromptResult{Content: p.content}, nil
+	p.module = agent.UsageModule(ctx)
+	return agent.PromptResult{Content: p.content}, nil
 }

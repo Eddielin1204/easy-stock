@@ -110,7 +110,7 @@ export function TokenUsageWorkspace({ config, refreshKey }: { config: BackendCon
 			<section className="token-usage-detail-grid">
 				<div className="token-usage-panel">
 					<header><div><span>消耗趋势 · 真实用量</span><strong>{period === 'day' ? '按日明细' : '按月明细'}</strong></div><Sigma size={18} /></header>
-					{rows.length ? <div className="token-usage-bars">{rows.slice(-14).map((row) => <div className="token-usage-bar-row" key={`${row.date}-${row.module}-${row.model}`}><span>{row.date}</span><div><i style={{ width: `${Math.max((row.total_tokens / maxRowTotal) * 100, 2)}%` }} /></div><strong>{formatNumber(row.total_tokens)}</strong></div>)}</div> : <EmptyUsage />}
+					{rows.length ? <div className="token-usage-bars">{rows.slice(-14).map((row) => <div className="token-usage-bar-row" key={`${row.date}-${row.module}-${row.model}-${row.runtime || "legacy"}`}><span>{row.date}</span><div><i style={{ width: `${Math.max((row.total_tokens / maxRowTotal) * 100, 2)}%` }} /></div><strong>{formatNumber(row.total_tokens)}</strong></div>)}</div> : <EmptyUsage />}
 				</div>
 				<div className="token-usage-panel token-usage-module-panel">
 					<header><div><span>模块分布</span><strong>功能模块消耗</strong></div><Database size={18} /></header>
@@ -125,7 +125,7 @@ export function TokenUsageWorkspace({ config, refreshKey }: { config: BackendCon
 
 			<section className="token-usage-panel token-usage-table-panel">
 				<header><div><span>明细记录</span><strong>{period === 'day' ? '每日 Token 消耗' : '每月 Token 消耗'}</strong></div><small>{from} 至 {to} · 估算值不并入总量</small></header>
-				{rows.length ? <div className="token-usage-data-table"><div className="token-usage-data-row token-usage-data-head"><span>日期</span><span>功能模块</span><span>模型</span><span>输入</span><span>输出</span><span>真实总量</span><span>估算</span></div>{rows.slice().reverse().map((row) => <div className="token-usage-data-row" key={`${row.date}-${row.module}-${row.model}`}><span>{row.date}</span><span>{moduleLabels[row.module] || row.module}</span><span>{row.model || '未知'}</span><span>{formatNumber(row.prompt_tokens)}</span><span>{formatNumber(row.completion_tokens)}</span><strong>{formatNumber(row.total_tokens)}</strong><span className="token-usage-estimated">{row.estimated_total_tokens > 0 ? formatNumber(row.estimated_total_tokens) : '—'}</span></div>)}</div> : <EmptyUsage />}
+				{rows.length ? <div className="token-usage-data-table"><div className="token-usage-data-row token-usage-data-head"><span>日期</span><span>功能模块</span><span>模型</span><span>输入</span><span>输出</span><span>真实总量</span><span>估算</span></div>{rows.slice().reverse().map((row) => <div className="token-usage-data-row" key={`${row.date}-${row.module}-${row.model}-${row.runtime || "legacy"}`}><span>{row.date}</span><span>{moduleLabels[row.module] || row.module}</span><span>{row.model || '未知'}{row.runtime ? ` · ${row.runtime === 'codex' ? 'Codex' : 'Hermes'}` : ''}</span><span>{formatNumber(row.prompt_tokens)}</span><span>{formatNumber(row.completion_tokens)}</span><strong>{formatNumber(row.total_tokens)}</strong><span className="token-usage-estimated">{row.estimated_total_tokens > 0 ? formatNumber(row.estimated_total_tokens) : '—'}</span></div>)}</div> : <EmptyUsage />}
 			</section>
 		</section>
 	);

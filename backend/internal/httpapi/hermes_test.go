@@ -7,50 +7,50 @@ import (
 	"io"
 	"sync"
 
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/appsettings"
-	"easy-stock/backend/internal/hermes"
 )
 
-type fakeHermesGateway struct {
-	status        hermes.Status
-	promptResult  hermes.PromptResult
+type fakeAgentGateway struct {
+	status        agent.Status
+	promptResult  agent.PromptResult
 	promptErr     error
-	promptFunc    func(context.Context, string) (hermes.PromptResult, error)
+	promptFunc    func(context.Context, string) (agent.PromptResult, error)
 	prompts       []string
-	promptOptions []hermes.PromptOptions
+	promptOptions []agent.PromptOptions
 	modelAPIKey   string
 	modelKeyErr   error
-	start         func(context.Context) (hermes.Process, error)
+	start         func(context.Context) (agent.Process, error)
 	lastLLM       appsettings.LLM
 	lastKey       *string
-	agentSettings hermes.AgentSettings
+	agentSettings agent.AgentSettings
 	deletedSkills []string
 	deleteErr     error
 }
 
-func (g *fakeHermesGateway) Status() hermes.Status { return g.status }
-func (g *fakeHermesGateway) ModelAPIKey() (string, error) {
+func (g *fakeAgentGateway) Status() agent.Status { return g.status }
+func (g *fakeAgentGateway) ModelAPIKey() (string, error) {
 	return g.modelAPIKey, g.modelKeyErr
 }
 
-func (g *fakeHermesGateway) Prompt(ctx context.Context, prompt string) (hermes.PromptResult, error) {
+func (g *fakeAgentGateway) Prompt(ctx context.Context, prompt string) (agent.PromptResult, error) {
 	g.prompts = append(g.prompts, prompt)
 	if g.promptFunc != nil {
 		return g.promptFunc(ctx, prompt)
 	}
 	return g.promptResult, g.promptErr
 }
-func (g *fakeHermesGateway) PromptWithOptions(ctx context.Context, prompt string, options hermes.PromptOptions) (hermes.PromptResult, error) {
+func (g *fakeAgentGateway) PromptWithOptions(ctx context.Context, prompt string, options agent.PromptOptions) (agent.PromptResult, error) {
 	g.promptOptions = append(g.promptOptions, options)
 	return g.Prompt(ctx, prompt)
 }
-func (g *fakeHermesGateway) Start(ctx context.Context) (hermes.Process, error) {
+func (g *fakeAgentGateway) Start(ctx context.Context) (agent.Process, error) {
 	if g.start != nil {
 		return g.start(ctx)
 	}
 	return newScriptedHermesProcess(), nil
 }
-func (g *fakeHermesGateway) SyncLLM(cfg appsettings.LLM, key *string) error {
+func (g *fakeAgentGateway) SyncLLM(cfg appsettings.LLM, key *string) error {
 	g.lastLLM = cfg
 	if cfg.Model == "" && cfg.BaseURL == "" && key == nil {
 		return nil
@@ -66,14 +66,14 @@ func (g *fakeHermesGateway) SyncLLM(cfg appsettings.LLM, key *string) error {
 	g.status.Configured = stringsConfigured(cfg, g.status.APIKeyConfigured)
 	return nil
 }
-func (g *fakeHermesGateway) AgentSettings() (hermes.AgentSettings, error) {
+func (g *fakeAgentGateway) AgentSettings() (agent.AgentSettings, error) {
 	return g.agentSettings, nil
 }
-func (g *fakeHermesGateway) SyncAgentSettings(settings hermes.AgentSettings) error {
+func (g *fakeAgentGateway) SyncAgentSettings(settings agent.AgentSettings) error {
 	g.agentSettings = settings
 	return nil
 }
-func (g *fakeHermesGateway) DeleteSkill(name string) error {
+func (g *fakeAgentGateway) DeleteSkill(name string) error {
 	g.deletedSkills = append(g.deletedSkills, name)
 	return g.deleteErr
 }

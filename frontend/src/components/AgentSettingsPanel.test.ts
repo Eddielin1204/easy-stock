@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { splitMCPArgs } from './HermesAgentSettingsPanel';
+import { splitMCPArgs } from './AgentSettingsPanel';
 
-describe('Hermes MCP settings', () => {
+describe('Agent MCP settings', () => {
 	it('splits one command argument per line and removes blank lines', () => {
 		expect(splitMCPArgs(' -y\n\n @modelcontextprotocol/server-filesystem \n/path ')).toEqual(['-y', '@modelcontextprotocol/server-filesystem', '/path']);
 	});

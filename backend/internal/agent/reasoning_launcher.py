@@ -23,8 +23,8 @@ def describe(config, metadata=None, supplement=None):
     profile = get_provider_profile(provider)
     from hermes_cli.model_normalize import normalize_model_for_provider
     effective_model = normalize_model_for_provider(model, provider) if provider else model
-    result = {"options": [{"value": "default", "label": "暂不支持调节"}], "default": "default",
-              "source": "unknown", "note": "Hermes 尚未声明该模型在当前接口上的可调档位，使用运行时默认设置。", "profile": "", "effective_model": effective_model}
+    result = {"options": [{"value": "default", "label": "能力未确认"}], "default": "default",
+              "source": "unknown", "note": (supplement or {}).get("note") or "尚未确认该模型在当前接口上的可调档位，使用运行时默认设置。", "profile": "", "effective_model": effective_model}
     values = []
     if provider in ("openrouter", "nous") and metadata:
         from hermes_cli.models_reasoning_caps import parse_openrouter_reasoning_capabilities
@@ -38,10 +38,10 @@ def describe(config, metadata=None, supplement=None):
         values = list(effort.codex_supported_efforts(model))
         result["profile"] = "custom"
         result["wire"] = "openai_responses" if mode == "codex_responses" else "openai_chat"
-    elif mode == "chat_completions" and provider in ("kimi-coding", "kimi-coding-cn") and model.lower().startswith(("kimi-k", "k3")):
+    elif mode == "chat_completions" and provider in ("kimi-coding", "kimi-coding-cn") and model.lower() in ("kimi-for-coding", "k2p5"):
         # The per-model helper is more specific than KimiProfile's K3 default.
         values = ["none", *effort.kimi_supported_efforts(model)]
-    elif mode == "chat_completions" and profile and provider in ("zai", "deepseek"):
+    elif mode == "chat_completions" and profile and provider == "deepseek" and effective_model in ("deepseek-v4-pro", "deepseek-v4-flash", "deepseek-flash"):
         # Inspect the provider's actual translation, excluding compatibility
         # aliases that collapse to another displayed level. No second level table.
         for value in ("none", "minimal", "low", "medium", "high", "xhigh", "max"):
@@ -62,15 +62,23 @@ def describe(config, metadata=None, supplement=None):
         values = [o["value"] for o in supplement["options"]]
         if mode == "anthropic_messages":
             from agent.anthropic_adapter import _thinking_kwargs
-            values = [v for v in values if
-                      _thinking_kwargs(parse_reasoning_effort(v), model, 4096).get("output_config", {}).get("effort") == v]
+            if supplement.get("wire") == "anthropic_budget":
+                values = [v for v in values if v == "none" or
+                          "budget_tokens" in _thinking_kwargs(parse_reasoning_effort(v), model, 4096).get("thinking", {})]
+            else:
+                values = [v for v in values if
+                          _thinking_kwargs(parse_reasoning_effort(v), model, 4096).get("output_config", {}).get("effort") == v]
             if not values:
                 return result
         result.update(supplement)
-        result["profile"] = provider if profile else ("custom" if provider == "openai" else "")
+        # Responses uses its native reasoning object, even for providers whose
+        # Chat adapter uses top-level reasoning_effort / thinking parameters.
+        result["profile"] = "custom" if result.get("wire") in ("openai_responses", "openai_chat") else (provider if profile else "")
     if not values:
         return result
-    labels = {"none": "关闭思考", "enabled": "开启思考", "minimal": "极简", "low": "低", "medium": "中", "high": "高", "xhigh": "极高", "max": "最大"}
+    labels = {"default": "模型默认", "none": "关闭思考", "enabled": "开启思考", "minimal": "极简", "low": "低", "medium": "中", "high": "高", "xhigh": "极高", "max": "最大"}
+    if supplement and supplement.get("source") != "unknown":
+        labels.update({o["value"]: o["label"] for o in supplement["options"]})
     result["options"] = [{"value": v, "label": labels[v]} for v in values]
     if result["default"] not in values:
         result["default"] = "medium" if "medium" in values else "high" if "high" in values else values[-1]
@@ -111,6 +119,17 @@ def install_profile(config, capability):
             selected = capability["default"]
         if wire == "qwen_toggle":
             return {"enable_thinking": selected != "none"}, {}
+        if wire in ("siliconflow_budget", "qwen_budget"):
+            if selected == "none":
+                return {"enable_thinking": False}, {}
+            return {"enable_thinking": True, "thinking_budget": {"low": 1024, "medium": 4096, "high": 8192}[selected]}, {}
+        if wire == "thinking_toggle":
+            return {"thinking": {"type": "disabled" if selected == "none" else "enabled"}}, {}
+        if wire == "minimax":
+            extra = {"reasoning_split": True, "thinking": {"type": "disabled" if selected == "none" else "adaptive"}}
+            return extra, {} if selected in ("none", "enabled") else {"reasoning_effort": selected}
+        if wire == "deepseek":
+            return {"thinking": {"type": "disabled" if selected == "none" else "enabled"}}, {} if selected == "none" else {"reasoning_effort": selected}
         normalized = parse_reasoning_effort("medium" if selected == "enabled" else selected)
         if native and native.name in ("kimi-coding", "kimi-coding-cn"):
             from agent import reasoning_effort as effort
@@ -131,7 +150,7 @@ def install_profile(config, capability):
     def supported(self, requested_model):
         if requested_model not in (model, effective_model):
             return original.supported_reasoning_efforts(requested_model)
-        return tuple(v for v in values if v not in ("default", "enabled"))
+        return tuple("medium" if v == "enabled" else v for v in values if v != "default")
 
     # Named connections resolve to provider="custom" in Hermes. Register only
     # in this child process, delegating all other routes to the original profile.

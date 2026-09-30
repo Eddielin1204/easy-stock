@@ -1,4 +1,4 @@
-package hermes
+package agent
 
 import (
 	"archive/zip"
@@ -11,7 +11,7 @@ import (
 
 func TestImportSkillsDirectoryAndZip(t *testing.T) {
 	home := t.TempDir()
-	runtime := NewRuntime(Config{Home: home})
+	runtime := NewHermesRuntime(HermesConfig{Home: home})
 	files := []SkillImportFile{
 		{Name: "trading/demo/SKILL.md", Data: []byte("---\nname: demo-skill\ndescription: demo\n---\n")},
 		{Name: "trading/demo/references/readme.md", Data: []byte("reference")},
@@ -45,7 +45,7 @@ func TestImportSkillsDirectoryAndZip(t *testing.T) {
 }
 
 func TestImportSkillsRejectsTraversal(t *testing.T) {
-	runtime := NewRuntime(Config{Home: t.TempDir()})
+	runtime := NewHermesRuntime(HermesConfig{Home: t.TempDir()})
 	if _, err := runtime.ImportSkills([]SkillImportFile{{Name: "../SKILL.md", Data: []byte("---\nname: bad\n---\n")}}); err == nil {
 		t.Fatal("expected traversal to be rejected")
 	}
@@ -53,7 +53,7 @@ func TestImportSkillsRejectsTraversal(t *testing.T) {
 
 func TestDeleteSkillRemovesDirectoryAndDisabledEntry(t *testing.T) {
 	home := t.TempDir()
-	runtime := NewRuntime(Config{Home: home})
+	runtime := NewHermesRuntime(HermesConfig{Home: home})
 	if _, err := runtime.ImportSkills([]SkillImportFile{
 		{Name: "trading/demo/SKILL.md", Data: []byte("---\nname: demo-skill\ndescription: demo\n---\n")},
 		{Name: "trading/other/SKILL.md", Data: []byte("---\nname: other-skill\ndescription: other\n---\n")},

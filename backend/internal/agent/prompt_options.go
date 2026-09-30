@@ -1,4 +1,4 @@
-package hermes
+package agent
 
 import (
 	"context"
@@ -40,7 +40,7 @@ type OptionsPrompter interface {
 }
 
 // PromptUsingOptions preserves compatibility with lightweight test and older
-// prompters while allowing Runtime to enforce the sandbox for unattended jobs.
+// prompters while allowing HermesRuntime to enforce the sandbox for unattended jobs.
 func PromptUsingOptions(ctx context.Context, prompter Prompter, prompt string, options PromptOptions) (PromptResult, error) {
 	if options.AutoApprove && !options.Sandbox {
 		return PromptResult{}, errors.New("Hermes 自动授权只能在隔离沙箱中启用")
@@ -88,7 +88,7 @@ func (s *promptSandbox) close() {
 	_ = os.RemoveAll(s.root)
 }
 
-func (r *Runtime) preparePromptSandbox(options PromptOptions) (*promptSandbox, error) {
+func (r *HermesRuntime) preparePromptSandbox(options PromptOptions) (*promptSandbox, error) {
 	root, err := os.MkdirTemp("", "easy-stock-hermes-sandbox-")
 	if err != nil {
 		return nil, fmt.Errorf("创建 Hermes 临时沙箱: %w", err)

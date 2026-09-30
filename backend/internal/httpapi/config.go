@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/appsettings"
 	"easy-stock/backend/internal/foundation"
-	"easy-stock/backend/internal/hermes"
 	"easy-stock/backend/internal/marketemotion"
 	"easy-stock/backend/internal/methodology"
 	"easy-stock/backend/internal/portfolioinspection"
@@ -138,7 +138,7 @@ type Config struct {
 	ReviewAutomation     *review.Automation
 	RemoteDailyReviewURL string
 	RemoteDailySync      *review.RemoteDailySync
-	HermesGateway        hermes.Gateway
+	AgentGateway         agent.Gateway
 	MasteryLibrary       *methodology.Library
 	Logger               *log.Logger
 	StrictPersistence    bool

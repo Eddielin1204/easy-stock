@@ -3,6 +3,8 @@ package httpapi
 import (
 	"bufio"
 	"context"
+	"easy-stock/backend/internal/agent"
+	"easy-stock/backend/internal/runtimelog"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,7 +17,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const maxHermesGatewayFrameBytes = 4 << 20
+const maxAgentGatewayFrameBytes = 4 << 20
 
 var hermesWebSocketUpgrader = websocket.Upgrader{
 	ReadBufferSize:  64 << 10,
@@ -28,17 +30,17 @@ var hermesWebSocketUpgrader = websocket.Upgrader{
 }
 
 func (s *Server) aiChatWebSocket(w http.ResponseWriter, r *http.Request) {
-	if s.hermesGateway == nil {
-		writeError(w, http.StatusServiceUnavailable, "Hermes 对话底座不可用")
+	if s.agentGateway == nil {
+		writeError(w, http.StatusServiceUnavailable, "Agent 对话底座不可用")
 		return
 	}
-	status := s.hermesGateway.Status()
+	status := s.agentGateway.Status()
 	if !status.Available {
-		writeError(w, http.StatusServiceUnavailable, firstNonEmpty(status.Message, "Hermes 运行时不可用"))
+		writeError(w, http.StatusServiceUnavailable, firstNonEmpty(status.Message, "Agent 运行时不可用"))
 		return
 	}
 	if !status.Configured {
-		writeError(w, http.StatusPreconditionFailed, firstNonEmpty(status.Message, "请先配置 Hermes 模型"))
+		writeError(w, http.StatusPreconditionFailed, firstNonEmpty(status.Message, "请先配置 Agent 模型"))
 		return
 	}
 
@@ -47,11 +49,16 @@ func (s *Server) aiChatWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer connection.Close()
-	connection.SetReadLimit(maxHermesGatewayFrameBytes)
+	connection.SetReadLimit(maxAgentGatewayFrameBytes)
 
-	process, err := s.hermesGateway.Start(r.Context())
+	var process agent.Process
+	if service, ok := s.agentGateway.(*agent.Service); ok {
+		process, err = service.StartWithRevision(r.Context(), r.URL.Query().Get("configuration_id"))
+	} else {
+		process, err = s.agentGateway.Start(r.Context())
+	}
 	if err != nil {
-		_ = writeHermesGatewayError(connection, err.Error())
+		_ = writeAgentGatewayError(connection, err.Error())
 		return
 	}
 	waited := false
@@ -90,8 +97,8 @@ func (s *Server) aiChatWebSocket(w http.ResponseWriter, r *http.Request) {
 			if messageType != websocket.TextMessage {
 				continue
 			}
-			if len(payload) > maxHermesGatewayFrameBytes {
-				clientDone <- errors.New("Hermes 请求帧过大")
+			if len(payload) > maxAgentGatewayFrameBytes {
+				clientDone <- errors.New("Agent 请求帧过大")
 				_ = process.Stop()
 				return
 			}
@@ -106,7 +113,7 @@ func (s *Server) aiChatWebSocket(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	scanner := bufio.NewScanner(process.Output())
-	scanner.Buffer(make([]byte, 64<<10), maxHermesGatewayFrameBytes)
+	scanner.Buffer(make([]byte, 64<<10), maxAgentGatewayFrameBytes)
 	for scanner.Scan() {
 		payload := append([]byte(nil), scanner.Bytes()...)
 		if len(strings.TrimSpace(string(payload))) == 0 {
@@ -131,11 +138,11 @@ func (s *Server) aiChatWebSocket(w http.ResponseWriter, r *http.Request) {
 		stderrMu.Lock()
 		detail := strings.TrimSpace(stderrTail)
 		stderrMu.Unlock()
-		message := "Hermes 会话意外结束"
+		message := "Agent 会话意外结束"
 		if detail != "" {
-			message += ": " + detail
+			message += ": " + runtimelog.Redact(detail)
 		}
-		_ = writeHermesGatewayError(connection, message)
+		_ = writeAgentGatewayError(connection, message)
 	}
 }
 
@@ -178,7 +185,7 @@ func (s *Server) enrichHermesPrompt(parent context.Context, payload []byte) []by
 		params["text"] = strings.Join(contexts, "\n\n") + "\n\n[用户当前问题]\n" + prompt
 	}
 	updated, err := json.Marshal(frame)
-	if err != nil || len(updated) > maxHermesGatewayFrameBytes {
+	if err != nil || len(updated) > maxAgentGatewayFrameBytes {
 		return payload
 	}
 	return updated
@@ -189,7 +196,7 @@ func rpcString(value any) string {
 	return text
 }
 
-func writeHermesGatewayError(connection *websocket.Conn, message string) error {
+func writeAgentGatewayError(connection *websocket.Conn, message string) error {
 	payload, err := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
 		"method":  "event",

@@ -1,4 +1,4 @@
-package hermes
+package agent
 
 import (
 	"bufio"
@@ -39,6 +39,8 @@ var diagnosticSecretPattern = regexp.MustCompile(`(?i)(authorization\s*[:=]\s*(?
 const systemPrompt = `你是 easy-stock 的 AI 投研助手。easy-stock 是面向 A 股市场的 AI 原生行情分析与研究工作台。像 Codex 一样协作：先理解目标，再基于可追踪的数据和原文证据给出清晰、可执行、可验证的回答；主动区分事实、推断、市场预期与待验证条件，不编造实时数据，不承诺收益。涉及游资、心法、情绪周期、龙头战法、首板、打板、仓位或预期差时，优先使用本机的 a-stock-short-term-masters 技能核对原文，并说明这些内容属于历史经验与二次整理材料。当前仅可调用系统列出的技能；不要猜测或调用 hermes-agent、trading 等不存在的技能名称，找不到技能时直接说明并继续用已有能力回答。默认使用中文，除非用户要求其他语言。`
 
 type Status struct {
+	ConfigurationID  string `json:"configuration_id,omitempty"`
+	Runtime          string `json:"runtime,omitempty"`
 	Available        bool   `json:"available"`
 	Configured       bool   `json:"configured"`
 	APIKeyConfigured bool   `json:"api_key_configured"`
@@ -47,6 +49,8 @@ type Status struct {
 }
 
 type PromptResult struct {
+	Runtime         string
+	ModelIdentity   string
 	Content         string
 	SessionID       string
 	StoredSessionID string
@@ -109,6 +113,7 @@ func IsValidReasoningEffort(value string) bool {
 }
 
 type SkillInfo struct {
+	directory   string
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Category    string `json:"category"`
@@ -130,14 +135,14 @@ type MCPServerInfo struct {
 	raw                      map[string]any
 }
 
-type Config struct {
+type HermesConfig struct {
 	RuntimeRoot string
 	Home        string
 	WorkDir     string
 	PythonPath  string
 }
 
-type Runtime struct {
+type HermesRuntime struct {
 	runtimeRoot string
 	home        string
 	workDir     string
@@ -152,7 +157,7 @@ type Runtime struct {
 	hasAPIKey         bool
 }
 
-func NewRuntime(cfg Config) *Runtime {
+func NewHermesRuntime(cfg HermesConfig) *HermesRuntime {
 	runtimeRoot := strings.TrimSpace(cfg.RuntimeRoot)
 	home := strings.TrimSpace(cfg.Home)
 	workDir := strings.TrimSpace(cfg.WorkDir)
@@ -160,7 +165,7 @@ func NewRuntime(cfg Config) *Runtime {
 	if pythonPath == "" && runtimeRoot != "" {
 		pythonPath = runtimePython(runtimeRoot)
 	}
-	return &Runtime{
+	return &HermesRuntime{
 		runtimeRoot: runtimeRoot,
 		home:        home,
 		workDir:     workDir,
@@ -168,13 +173,13 @@ func NewRuntime(cfg Config) *Runtime {
 	}
 }
 
-func (r *Runtime) Status() Status {
+func (r *HermesRuntime) Status() Status {
 	r.mu.RLock()
 	configured := r.configured
 	hasAPIKey := r.hasAPIKey
 	r.mu.RUnlock()
 
-	status := Status{Configured: configured, APIKeyConfigured: hasAPIKey, Version: r.runtimeVersion()}
+	status := Status{Runtime: "hermes", Configured: configured, APIKeyConfigured: hasAPIKey, Version: r.runtimeVersion()}
 	if r.pythonPath == "" {
 		status.Message = "未配置 Hermes 运行时路径"
 		return status
@@ -191,17 +196,17 @@ func (r *Runtime) Status() Status {
 	return status
 }
 
-func (r *Runtime) responseTimeoutSeconds() int {
+func (r *HermesRuntime) responseTimeoutSeconds() int {
 	r.mu.RLock()
 	seconds := r.llm.ResponseTimeoutSeconds
 	r.mu.RUnlock()
 	return appsettings.NormalizeLLMResponseTimeoutSeconds(seconds)
 }
 
-// ModelAPIKey returns the protected provider key for backend-only operations
-// such as discovering models. Callers must never expose the returned value in
-// responses or logs.
-func (r *Runtime) ModelAPIKey() (string, error) {
+// ModelAPIKey returns the protected provider key for model requests and
+// discovery. Only the explicit settings reveal action may return it to the
+// client; ordinary responses and logs must never include the value.
+func (r *HermesRuntime) ModelAPIKey() (string, error) {
 	if strings.TrimSpace(r.home) == "" {
 		return "", errors.New("Hermes 用户目录未配置")
 	}
@@ -211,19 +216,19 @@ func (r *Runtime) ModelAPIKey() (string, error) {
 // SyncLLM writes the app's model selection into Hermes' own config.yaml and
 // writes secrets only into Hermes' .env. A nil apiKeyUpdate retains the
 // existing MODEL_API_KEY; a pointer to an empty string clears it.
-func (r *Runtime) SyncLLM(cfg appsettings.LLM, apiKeyUpdate *string) error {
+func (r *HermesRuntime) SyncLLM(cfg appsettings.LLM, apiKeyUpdate *string) error {
 	return r.syncLLM(cfg, "active", apiKeyUpdate)
 }
 
 // SyncLLMProfile activates a profile and makes its key the Hermes runtime key.
-func (r *Runtime) SyncLLMProfile(cfg appsettings.LLM, profileID string, apiKeyUpdate *string) error {
+func (r *HermesRuntime) SyncLLMProfile(cfg appsettings.LLM, profileID string, apiKeyUpdate *string) error {
 	if strings.TrimSpace(profileID) == "" {
 		profileID = "active"
 	}
 	return r.syncLLM(cfg, profileID, apiKeyUpdate)
 }
 
-func (r *Runtime) syncLLM(cfg appsettings.LLM, profileID string, apiKeyUpdate *string) error {
+func (r *HermesRuntime) syncLLM(cfg appsettings.LLM, profileID string, apiKeyUpdate *string) error {
 	if strings.TrimSpace(r.home) == "" {
 		return errors.New("Hermes 用户目录未配置")
 	}
@@ -295,7 +300,7 @@ func (r *Runtime) syncLLM(cfg appsettings.LLM, profileID string, apiKeyUpdate *s
 }
 
 // StoreLLMProfileKey updates only a non-active profile's secret.
-func (r *Runtime) StoreLLMProfileKey(profileID string, apiKeyUpdate *string) error {
+func (r *HermesRuntime) StoreLLMProfileKey(profileID string, apiKeyUpdate *string) error {
 	if strings.TrimSpace(r.home) == "" {
 		return errors.New("Hermes 用户目录未配置")
 	}
@@ -317,7 +322,7 @@ func (r *Runtime) StoreLLMProfileKey(profileID string, apiKeyUpdate *string) err
 	return writeEnvValue(filepath.Join(r.home, ".env"), profileKeyEnvName(profileID), value)
 }
 
-func (r *Runtime) ModelAPIKeyForProfile(profileID string) (string, error) {
+func (r *HermesRuntime) ModelAPIKeyForProfile(profileID string) (string, error) {
 	if strings.TrimSpace(r.home) == "" {
 		return "", errors.New("Hermes 用户目录未配置")
 	}
@@ -347,7 +352,7 @@ func profileKeyEnvName(profileID string) string {
 	return modelProfileKeyPrefix + b.String()
 }
 
-func (r *Runtime) AgentSettings() (AgentSettings, error) {
+func (r *HermesRuntime) AgentSettings() (AgentSettings, error) {
 	if strings.TrimSpace(r.home) == "" {
 		return AgentSettings{}, errors.New("Hermes 用户目录未配置")
 	}
@@ -400,7 +405,7 @@ func (r *Runtime) AgentSettings() (AgentSettings, error) {
 	return settings, nil
 }
 
-func (r *Runtime) SyncAgentSettings(settings AgentSettings) error {
+func (r *HermesRuntime) SyncAgentSettings(settings AgentSettings) error {
 	if strings.TrimSpace(r.home) == "" {
 		return errors.New("Hermes 用户目录未配置")
 	}
@@ -509,11 +514,11 @@ func (r *Runtime) SyncAgentSettings(settings AgentSettings) error {
 	return r.writeConfigMap(config)
 }
 
-func (r *Runtime) Start(ctx context.Context) (Process, error) {
+func (r *HermesRuntime) Start(ctx context.Context) (Process, error) {
 	return r.start(ctx, "", promptProcessOptions{})
 }
 
-func (r *Runtime) start(ctx context.Context, browserStatePath string, options promptProcessOptions) (Process, error) {
+func (r *HermesRuntime) start(ctx context.Context, browserStatePath string, options promptProcessOptions) (Process, error) {
 	status := r.Status()
 	if !status.Available {
 		return nil, errors.New(firstNonEmpty(status.Message, "Hermes 运行时不可用"))
@@ -577,7 +582,7 @@ func (r *Runtime) start(ctx context.Context, browserStatePath string, options pr
 	return &commandProcess{cmd: cmd, stdin: stdin, stdout: stdout, stderr: stderr}, nil
 }
 
-func (r *Runtime) processEnvironment(browserStatePath string, options promptProcessOptions) ([]string, error) {
+func (r *HermesRuntime) processEnvironment(browserStatePath string, options promptProcessOptions) ([]string, error) {
 	modelAPIKey, err := readEnvValue(filepath.Join(r.home, ".env"), modelAPIKeyEnvName)
 	if err != nil {
 		return nil, err
@@ -612,18 +617,18 @@ func (r *Runtime) processEnvironment(browserStatePath string, options promptProc
 	return values, nil
 }
 
-func (r *Runtime) Prompt(ctx context.Context, prompt string) (PromptResult, error) {
+func (r *HermesRuntime) Prompt(ctx context.Context, prompt string) (PromptResult, error) {
 	return r.prompt(ctx, prompt, "", PromptOptions{})
 }
 
-func (r *Runtime) PromptWithOptions(ctx context.Context, prompt string, options PromptOptions) (PromptResult, error) {
+func (r *HermesRuntime) PromptWithOptions(ctx context.Context, prompt string, options PromptOptions) (PromptResult, error) {
 	if options.AutoApprove && !options.Sandbox {
 		return PromptResult{}, errors.New("Hermes 自动授权只能在隔离沙箱中启用")
 	}
 	return r.prompt(ctx, prompt, "", options)
 }
 
-func (r *Runtime) PromptWithOptionsAndBrowserState(ctx context.Context, prompt, storageStatePath string, options PromptOptions) (PromptResult, error) {
+func (r *HermesRuntime) PromptWithOptionsAndBrowserState(ctx context.Context, prompt, storageStatePath string, options PromptOptions) (PromptResult, error) {
 	if strings.TrimSpace(storageStatePath) == "" {
 		return PromptResult{}, errors.New("浏览器登录态路径不能为空")
 	}
@@ -631,14 +636,14 @@ func (r *Runtime) PromptWithOptionsAndBrowserState(ctx context.Context, prompt, 
 	return r.prompt(ctx, prompt, options.BrowserStatePath, options)
 }
 
-func (r *Runtime) PromptWithBrowserState(ctx context.Context, prompt, storageStatePath string) (PromptResult, error) {
+func (r *HermesRuntime) PromptWithBrowserState(ctx context.Context, prompt, storageStatePath string) (PromptResult, error) {
 	if strings.TrimSpace(storageStatePath) == "" {
 		return PromptResult{}, errors.New("浏览器登录态路径不能为空")
 	}
 	return r.prompt(ctx, prompt, strings.TrimSpace(storageStatePath), PromptOptions{})
 }
 
-func (r *Runtime) prompt(ctx context.Context, prompt, browserStatePath string, options PromptOptions) (PromptResult, error) {
+func (r *HermesRuntime) prompt(ctx context.Context, prompt, browserStatePath string, options PromptOptions) (PromptResult, error) {
 	if strings.TrimSpace(prompt) == "" {
 		return PromptResult{}, errors.New("Hermes 提示词不能为空")
 	}
@@ -886,7 +891,7 @@ func waitForDiagnostics(done <-chan struct{}) {
 	}
 }
 
-func (r *Runtime) hermesFailure(summary, diagnostic string) error {
+func (r *HermesRuntime) hermesFailure(summary, diagnostic string) error {
 	apiKey, _ := r.ModelAPIKey()
 	summary = sanitizeHermesDiagnostic(summary, apiKey)
 	diagnostic = sanitizeHermesDiagnostic(diagnostic, apiKey)
@@ -1008,7 +1013,7 @@ func renderConfig(cfg appsettings.LLM, workDir, runtimeVersion string) string {
 	return text.String()
 }
 
-func (r *Runtime) renderMergedConfig(cfg appsettings.LLM) (string, error) {
+func (r *HermesRuntime) renderMergedConfig(cfg appsettings.LLM) (string, error) {
 	config, err := r.readConfigMap()
 	if err != nil {
 		return "", err
@@ -1040,7 +1045,7 @@ func (r *Runtime) renderMergedConfig(cfg appsettings.LLM) (string, error) {
 	return string(data), nil
 }
 
-func (r *Runtime) readConfigMap() (map[string]any, error) {
+func (r *HermesRuntime) readConfigMap() (map[string]any, error) {
 	config := map[string]any{}
 	data, err := os.ReadFile(filepath.Join(r.home, "config.yaml"))
 	if errors.Is(err, os.ErrNotExist) {
@@ -1058,7 +1063,7 @@ func (r *Runtime) readConfigMap() (map[string]any, error) {
 	return config, nil
 }
 
-func (r *Runtime) writeConfigMap(config map[string]any) error {
+func (r *HermesRuntime) writeConfigMap(config map[string]any) error {
 	data, err := yaml.Marshal(config)
 	if err != nil {
 		return fmt.Errorf("编码 Hermes 配置: %w", err)
@@ -1096,7 +1101,7 @@ func discoverSkills(root string) []SkillInfo {
 				category = parts[0]
 			}
 		}
-		result = append(result, SkillInfo{Name: name, Description: description, Category: category, Enabled: true})
+		result = append(result, SkillInfo{Name: name, Description: description, Category: category, Enabled: true, directory: skillDir})
 		return nil
 	})
 	slices.SortFunc(result, func(a, b SkillInfo) int { return strings.Compare(a.Name, b.Name) })
@@ -1446,7 +1451,7 @@ func writeSecureFile(path string, data []byte) error {
 	return os.Chmod(path, 0o600)
 }
 
-func (r *Runtime) runtimeVersion() string {
+func (r *HermesRuntime) runtimeVersion() string {
 	if strings.TrimSpace(r.runtimeRoot) == "" {
 		return ""
 	}

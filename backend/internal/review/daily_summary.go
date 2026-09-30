@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/foundation"
-	"easy-stock/backend/internal/hermes"
 	"easy-stock/backend/internal/runtimelog"
 )
 
@@ -27,7 +27,7 @@ const (
 	maxAuthorSummaryTotalRunes   = 42000
 )
 
-var dailySummaryPromptOptions = hermes.PromptOptions{
+var dailySummaryPromptOptions = agent.PromptOptions{
 	Sandbox:     true,
 	AutoApprove: true,
 	Toolsets:    []string{"code_execution", "web"},
@@ -436,6 +436,11 @@ func (a *Automation) SummarizeWindow(ctx context.Context, start, end time.Time) 
 }
 
 func (a *Automation) summarizeWindow(ctx context.Context, window reviewFreshnessWindow, progress dailySummaryProgress) (DailySummary, error) {
+	ctx, release, bindErr := agent.BindTask(ctx, a.prompter)
+	if bindErr != nil {
+		return DailySummary{}, bindErr
+	}
+	defer release()
 	if a.store == nil {
 		return DailySummary{}, errors.New("复盘日记存储不可用")
 	}
@@ -1231,10 +1236,10 @@ func parseDailySummaryModel(content string) (dailySummaryModel, error) {
 	return result, nil
 }
 
-func promptDailySummaryJSON[T any](ctx context.Context, prompter hermes.Prompter, prompt, label string, parse func(string) (T, error)) (T, error) {
+func promptDailySummaryJSON[T any](ctx context.Context, prompter agent.Prompter, prompt, label string, parse func(string) (T, error)) (T, error) {
 	var empty T
-	ctx = hermes.WithUsageModule(ctx, "review-summary")
-	response, err := hermes.PromptUsingOptions(ctx, prompter, prompt, dailySummaryPromptOptions)
+	ctx = agent.WithUsageModule(ctx, "review-summary")
+	response, err := agent.PromptUsingOptions(ctx, prompter, prompt, dailySummaryPromptOptions)
 	if err != nil {
 		return empty, fmt.Errorf("Hermes %s失败: %w", label, err)
 	}
@@ -1252,7 +1257,7 @@ func promptDailySummaryJSON[T any](ctx context.Context, prompter hermes.Prompter
 
 [原始任务]
 ` + prompt + "\n\n[上一次无效输出，仅用于纠错]\n" + truncateRunes(response.Content, 4000)
-	repaired, retryErr := hermes.PromptUsingOptions(ctx, prompter, repairPrompt, dailySummaryPromptOptions)
+	repaired, retryErr := agent.PromptUsingOptions(ctx, prompter, repairPrompt, dailySummaryPromptOptions)
 	if retryErr != nil {
 		return empty, fmt.Errorf("Hermes %s首次未返回有效JSON（输出%d字符），且自动纠错请求失败：%v: %w", label, len([]rune(response.Content)), firstErr, retryErr)
 	}

@@ -110,7 +110,7 @@ export function TradingMastery({ config, refreshKey, onAskAI }: Props) {
 				<div className="mastery-hero-status">
 					<div className={snapshot?.knowledge_status === 'ready' ? 'ready' : 'limited'}>
 						{snapshot?.knowledge_status === 'ready' ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
-						<span><strong>{snapshot?.knowledge_status === 'ready' ? 'Hermes 知识库已同步' : 'Hermes 知识库受限'}</strong><small>{snapshot ? `${snapshot.traders.length} 位游资 · ${formatDateTime(snapshot.fetched_at)}` : '正在建立本地缓存'}</small></span>
+						<span><strong>{snapshot?.knowledge_status === 'ready' ? 'Agent 知识库已同步' : 'Agent 知识库受限'}</strong><small>{snapshot ? `${snapshot.traders.length} 位游资 · ${formatDateTime(snapshot.fetched_at)}` : '正在建立本地缓存'}</small></span>
 					</div>
 					<button type="button" onClick={() => void refresh()} disabled={refreshing || indexState === 'loading'}><RefreshCw className={refreshing ? 'spin' : ''} size={15} />更新资料</button>
 				</div>
@@ -149,7 +149,7 @@ export function TradingMastery({ config, refreshKey, onAskAI }: Props) {
 									<div className="mastery-tags">{detail.tags?.map((tag) => <span key={tag}>{tag}</span>)}</div>
 								</div>
 								<div className="mastery-reader-actions">
-									<button type="button" className="ask-ai" onClick={() => onAskAI(detail.name)}><Bot size={15} />让 Hermes 研读</button>
+									<button type="button" className="ask-ai" onClick={() => onAskAI(detail.name)}><Bot size={15} />让 Agent 研读</button>
 									<a href={detail.source_url} target="_blank" rel="noreferrer"><ExternalLink size={14} />查看上游</a>
 								</div>
 							</header>

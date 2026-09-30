@@ -11,34 +11,34 @@ import (
 	"reflect"
 	"testing"
 
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/appsettings"
-	"easy-stock/backend/internal/hermes"
 )
 
 type stubGateway struct {
-	result hermes.PromptResult
+	result agent.PromptResult
 	err    error
 }
 
-func (s *stubGateway) Prompt(context.Context, string) (hermes.PromptResult, error) {
+func (s *stubGateway) Prompt(context.Context, string) (agent.PromptResult, error) {
 	return s.result, s.err
 }
 
 type usageOptionsGateway struct{ stubGateway }
 
-func (s *usageOptionsGateway) PromptWithOptions(ctx context.Context, prompt string, _ hermes.PromptOptions) (hermes.PromptResult, error) {
+func (s *usageOptionsGateway) PromptWithOptions(ctx context.Context, prompt string, _ agent.PromptOptions) (agent.PromptResult, error) {
 	return s.Prompt(ctx, prompt)
 }
 
-func (s *usageOptionsGateway) PromptWithBrowserState(ctx context.Context, prompt, _ string) (hermes.PromptResult, error) {
+func (s *usageOptionsGateway) PromptWithBrowserState(ctx context.Context, prompt, _ string) (agent.PromptResult, error) {
 	return s.Prompt(ctx, prompt)
 }
-func (s *stubGateway) Status() hermes.Status { return hermes.Status{} }
+func (s *stubGateway) Status() agent.Status { return agent.Status{} }
 func (s *stubGateway) ModelAPIKey() (string, error) {
 	return "", nil
 }
 func (s *stubGateway) SyncLLM(appsettings.LLM, *string) error { return nil }
-func (s *stubGateway) Start(context.Context) (hermes.Process, error) {
+func (s *stubGateway) Start(context.Context) (agent.Process, error) {
 	return nil, nil
 }
 
@@ -73,7 +73,7 @@ func TestTokenUsageStoreSeparatesModels(t *testing.T) {
 }
 
 func TestTokenUsageGatewayMarksMissingUsageAsEstimated(t *testing.T) {
-	wrapped := newTokenUsageGateway(&stubGateway{result: hermes.PromptResult{Content: "hello world"}}, newTokenUsageStore(filepath.Join(t.TempDir(), "settings.json")))
+	wrapped := newTokenUsageGateway(&stubGateway{result: agent.PromptResult{Content: "hello world"}}, newTokenUsageStore(filepath.Join(t.TempDir(), "settings.json")))
 	gateway := wrapped.(*tokenUsageGateway)
 	gateway.Prompt(context.Background(), "分析这只股票")
 
@@ -88,9 +88,9 @@ func TestTokenUsageGatewayMarksMissingUsageAsEstimated(t *testing.T) {
 
 func TestTokenUsageGatewayRecordsProviderModel(t *testing.T) {
 	store := newTokenUsageStore(filepath.Join(t.TempDir(), "settings.json"))
-	wrapped := newTokenUsageGateway(&stubGateway{result: hermes.PromptResult{
+	wrapped := newTokenUsageGateway(&stubGateway{result: agent.PromptResult{
 		Content: "hello world",
-		Usage:   hermes.TokenUsage{PromptTokens: 12, CompletionTokens: 3, TotalTokens: 15, Model: "claude-sonnet-4"},
+		Usage:   agent.TokenUsage{PromptTokens: 12, CompletionTokens: 3, TotalTokens: 15, Model: "claude-sonnet-4"},
 	}}, store)
 	wrapped.Prompt(context.Background(), "分析这只股票")
 
@@ -103,28 +103,28 @@ func TestTokenUsageGatewayAccountsForFailedRequests(t *testing.T) {
 	for _, method := range []string{"prompt", "options", "browser"} {
 		for _, tc := range []struct {
 			name         string
-			result       hermes.PromptResult
+			result       agent.PromptResult
 			err          error
 			wantReal     int
 			wantEstimate bool
 		}{
 			{name: "session failed before model call", err: errors.New("session.create failed")},
 			{name: "canceled", err: context.Canceled},
-			{name: "partial output without usage", result: hermes.PromptResult{Content: "partial"}, err: context.DeadlineExceeded},
-			{name: "failed with real usage", result: hermes.PromptResult{Usage: hermes.TokenUsage{PromptTokens: 12, CompletionTokens: 3, TotalTokens: 15, Model: "test-model"}}, err: context.DeadlineExceeded, wantReal: 15},
-			{name: "failed with input usage only", result: hermes.PromptResult{Usage: hermes.TokenUsage{PromptTokens: 12, Model: "test-model"}}, err: context.DeadlineExceeded, wantReal: 12},
-			{name: "successful without usage", result: hermes.PromptResult{Content: "response", Usage: hermes.TokenUsage{Model: "test-model"}}, wantEstimate: true},
+			{name: "partial output without usage", result: agent.PromptResult{Content: "partial"}, err: context.DeadlineExceeded},
+			{name: "failed with real usage", result: agent.PromptResult{Usage: agent.TokenUsage{PromptTokens: 12, CompletionTokens: 3, TotalTokens: 15, Model: "test-model"}}, err: context.DeadlineExceeded, wantReal: 15},
+			{name: "failed with input usage only", result: agent.PromptResult{Usage: agent.TokenUsage{PromptTokens: 12, Model: "test-model"}}, err: context.DeadlineExceeded, wantReal: 12},
+			{name: "successful without usage", result: agent.PromptResult{Content: "response", Usage: agent.TokenUsage{Model: "test-model"}}, wantEstimate: true},
 		} {
 			t.Run(method+"/"+tc.name, func(t *testing.T) {
 				store := newTokenUsageStore("")
 				gateway := newTokenUsageGateway(&usageOptionsGateway{stubGateway{result: tc.result, err: tc.err}}, store).(*tokenUsageGateway)
-				ctx := hermes.WithUsageModule(context.Background(), "review-analysis")
+				ctx := agent.WithUsageModule(context.Background(), "review-analysis")
 				var err error
 				switch method {
 				case "prompt":
 					_, err = gateway.Prompt(ctx, "test input")
 				case "options":
-					_, err = gateway.PromptWithOptions(ctx, "test input", hermes.PromptOptions{Sandbox: true})
+					_, err = gateway.PromptWithOptions(ctx, "test input", agent.PromptOptions{Sandbox: true})
 				case "browser":
 					_, err = gateway.PromptWithBrowserState(ctx, "test input", "test-state")
 				}

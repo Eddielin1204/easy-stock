@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { verifyCodexRuntime } from './codex-runtime.mjs';
 import { verifyHermesRuntime } from './verify-hermes-runtime.mjs';
 
 const packageRoot = path.resolve(process.argv[2] || '');
@@ -40,6 +41,7 @@ if (platform === 'windows' && fs.existsSync(path.join(resourcesRoot, 'hermes-run
 const forbiddenComponents = new Set([
 	'.runtime',
 	'hermes-home',
+	'codex-home',
 	'browser-auth',
 	'Local Storage',
 	'Session Storage',
@@ -47,6 +49,7 @@ const forbiddenComponents = new Set([
 ]);
 const forbiddenFiles = new Set([
 	'.credentials.json',
+	'auth.json',
 	'Cookies',
 	'Cookies-journal',
 	'id_rsa',
@@ -62,6 +65,7 @@ walk(packageRoot, (entryPath, entry) => {
 if (violations.length) {
 	throw new Error(`Release package contains local or sensitive runtime files:\n${violations.map((item) => `- ${item}`).join('\n')}`);
 }
+await verifyCodexRuntime(path.join(resourcesRoot, 'codex-runtime'));
 verifyHermesRuntime(path.join(resourcesRoot, 'hermes-runtime'));
 verifyBundledPython(runtimePython, path.join(resourcesRoot, 'wechat-download-api'));
 console.log(`Release package verified: ${packageRoot}`);

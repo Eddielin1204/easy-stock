@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"easy-stock/backend/internal/hermes"
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/review"
 )
 
@@ -20,8 +20,8 @@ type fakeReviewImporter struct{}
 
 type fakeReviewSummaryPrompter struct{}
 
-func (fakeReviewSummaryPrompter) Prompt(context.Context, string) (hermes.PromptResult, error) {
-	return hermes.PromptResult{Content: `{}`}, nil
+func (fakeReviewSummaryPrompter) Prompt(context.Context, string) (agent.PromptResult, error) {
+	return agent.PromptResult{Content: `{}`}, nil
 }
 
 func (fakeReviewImporter) ImportURL(_ context.Context, rawURL string) (review.Post, error) {
@@ -228,8 +228,8 @@ func TestReviewDailySummaryWindowEndpoints(t *testing.T) {
 }
 
 func TestReviewDailySummaryAnonymizeUsesHermesAndReturnsReplacements(t *testing.T) {
-	gateway := &fakeHermesGateway{promptResult: hermes.PromptResult{Content: `{"replacements":[{"from":"作者甲","to":"圆桌成员 A"},{"from":"甲老师","to":"圆桌成员 A"},{"from":"股票代码","to":"不应替换"},{"from":"过长无效","to":"圆桌成员 B"}]}`}}
-	server := NewServer(Config{HermesGateway: gateway})
+	gateway := &fakeAgentGateway{promptResult: agent.PromptResult{Content: `{"replacements":[{"from":"作者甲","to":"圆桌成员 A"},{"from":"甲老师","to":"圆桌成员 A"},{"from":"股票代码","to":"不应替换"},{"from":"过长无效","to":"圆桌成员 B"}]}`}}
+	server := NewServer(Config{AgentGateway: gateway})
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/reviews/daily-summary/anonymize", strings.NewReader(`{"summary":{"author_views":[{"author":"作者甲"}],"market_analysis":"作者甲认为甲老师关注股票代码"}}`))
 	request.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()

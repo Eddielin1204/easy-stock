@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/appsettings"
-	"easy-stock/backend/internal/hermes"
 )
 
 const maxModelListResponseBytes = 2 << 20
@@ -27,12 +27,12 @@ type llmModelsRequest struct {
 }
 
 type llmModelOption struct {
-	Metadata     json.RawMessage            `json:"-"`
-	Reasoning    hermes.ReasoningCapability `json:"reasoning"`
-	Capabilities json.RawMessage            `json:"-"`
-	ID           string                     `json:"id"`
-	OwnedBy      string                     `json:"owned_by,omitempty"`
-	DisplayName  string                     `json:"display_name,omitempty"`
+	Metadata     json.RawMessage           `json:"-"`
+	Reasoning    agent.ReasoningCapability `json:"reasoning"`
+	Capabilities json.RawMessage           `json:"-"`
+	ID           string                    `json:"id"`
+	OwnedBy      string                    `json:"owned_by,omitempty"`
+	DisplayName  string                    `json:"display_name,omitempty"`
 }
 
 type llmModelsResult struct {
@@ -60,14 +60,8 @@ func (s *Server) settingsLLMModels(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "unsupported llm provider: "+provider)
 		return
 	}
-	mode := input.APIMode
-	if mode == "" {
-		mode = "chat_completions"
-		if provider == "anthropic" {
-			mode = "anthropic_messages"
-		}
-	}
-	if mode != "chat_completions" && mode != "codex_responses" && mode != "anthropic_messages" {
+	mode := normalizeAPIMode(input.APIMode, provider)
+	if mode != "auto" && mode != "chat_completions" && mode != "codex_responses" && mode != "anthropic_messages" {
 		writeError(w, http.StatusBadRequest, "unsupported api_mode")
 		return
 	}
@@ -81,11 +75,11 @@ func (s *Server) settingsLLMModels(w http.ResponseWriter, r *http.Request) {
 	apiKey := ""
 	if input.APIKey != nil {
 		apiKey = strings.TrimSpace(*input.APIKey)
-	} else if s.hermesGateway != nil {
-		if gateway, ok := s.hermesGateway.(hermes.ProfileGateway); ok && strings.TrimSpace(input.ProfileID) != "" {
+	} else if s.agentGateway != nil {
+		if gateway, ok := s.agentGateway.(agent.ProfileGateway); ok && strings.TrimSpace(input.ProfileID) != "" {
 			apiKey, err = gateway.ModelAPIKeyForProfile(strings.TrimSpace(input.ProfileID))
 		} else {
-			apiKey, err = s.hermesGateway.ModelAPIKey()
+			apiKey, err = s.agentGateway.ModelAPIKey()
 		}
 		if err != nil {
 			writeError(w, http.StatusServiceUnavailable, "读取已保存模型密钥失败")
@@ -150,22 +144,22 @@ func (s *Server) settingsLLMModels(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	discovered := map[string]hermes.ReasoningCapability{}
+	discovered := map[string]agent.ReasoningCapability{}
 	for i := range models {
-		models[i].Reasoning = hermes.OfficialReasoningCapability(appsettings.LLM{Provider: provider, BaseURL: baseURL, Model: models[i].ID, APIMode: mode})
-		if capability, ok := hermes.DiscoveredReasoningCapability(mode, models[i].Capabilities); ok {
+		models[i].Reasoning = agent.OfficialReasoningCapability(appsettings.LLM{Provider: provider, BaseURL: baseURL, Model: models[i].ID, APIMode: mode})
+		if capability, ok := agent.DiscoveredModelReasoningCapability(mode, models[i].Metadata); ok {
 			models[i].Reasoning = capability
 			discovered[models[i].ID] = capability
 		}
 	}
-	if gateway, ok := s.hermesGateway.(hermes.CapabilityGateway); ok {
+	if gateway, ok := s.agentGateway.(agent.CapabilityGateway); ok {
 		raw := map[string]json.RawMessage{}
 		for _, model := range models {
 			raw[model.ID] = model.Metadata
 		}
 		resolved, err := gateway.ResolveModelCapabilities(baseURL, mode, raw)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "读取 Hermes 模型能力失败")
+			writeError(w, http.StatusInternalServerError, "读取模型能力失败")
 			return
 		}
 		for i := range models {
@@ -226,22 +220,48 @@ func buildModelsURL(provider, rawBaseURL string) (string, error) {
 
 func decodeModelList(body []byte) ([]llmModelOption, error) {
 	var payload struct {
-		Data []struct {
-			ID                  string          `json:"id"`
-			OwnedBy             string          `json:"owned_by"`
-			DisplayName         string          `json:"display_name"`
-			Capabilities        json.RawMessage `json:"capabilities"`
-			Reasoning           json.RawMessage `json:"reasoning"`
-			SupportedParameters []string        `json:"supported_parameters"`
-		} `json:"data"`
+		Data    []json.RawMessage `json:"data"`
+		Models  []json.RawMessage `json:"models"`
+		Success *bool             `json:"success"`
+		Error   json.RawMessage   `json:"error"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, errors.New("模型列表响应不是有效 JSON")
 	}
-	seen := make(map[string]struct{}, len(payload.Data))
-	models := make([]llmModelOption, 0, len(payload.Data))
-	for _, item := range payload.Data {
+	// Some services (including GLM's Responses endpoint) return HTTP 200 for
+	// authentication failures. Never expose their raw error message or body.
+	if (payload.Success != nil && !*payload.Success) || (len(payload.Error) > 0 && string(payload.Error) != "null") {
+		return nil, errors.New("模型列表接口返回错误，请检查 Base URL、API Key 和模型权限")
+	}
+	items := payload.Data
+	catalog := len(items) == 0 && payload.Models != nil
+	if catalog {
+		// GLM /api/v1/models returns the native Codex catalog, models[].slug,
+		// rather than OpenAI's data[].id. Only the discovery format differs;
+		// inference continues to use the configured URL and native protocol.
+		items = payload.Models
+	}
+	seen := make(map[string]struct{}, len(items))
+	models := make([]llmModelOption, 0, len(items))
+	for _, metadata := range items {
+		var item struct {
+			ID             string          `json:"id"`
+			Slug           string          `json:"slug"`
+			OwnedBy        string          `json:"owned_by"`
+			DisplayName    string          `json:"display_name"`
+			Capabilities   json.RawMessage `json:"capabilities"`
+			SupportedInAPI *bool           `json:"supported_in_api"`
+		}
+		if err := json.Unmarshal(metadata, &item); err != nil {
+			return nil, errors.New("模型列表条目格式无效")
+		}
 		id := strings.TrimSpace(item.ID)
+		if catalog {
+			if item.SupportedInAPI != nil && !*item.SupportedInAPI {
+				continue
+			}
+			id = strings.TrimSpace(item.Slug)
+		}
 		if id == "" || len(id) > 256 {
 			continue
 		}
@@ -249,11 +269,10 @@ func decodeModelList(body []byte) ([]llmModelOption, error) {
 			continue
 		}
 		seen[id] = struct{}{}
-		metadata, _ := json.Marshal(item)
 		models = append(models, llmModelOption{Metadata: metadata, ID: id, Capabilities: item.Capabilities, OwnedBy: strings.TrimSpace(item.OwnedBy), DisplayName: strings.TrimSpace(item.DisplayName)})
 	}
 	if len(models) == 0 {
-		return nil, errors.New("模型服务没有返回可用模型")
+		return nil, errors.New("模型服务未返回可用模型列表；可手动输入模型 ID 并测试连接")
 	}
 	sort.Slice(models, func(i, j int) bool {
 		return strings.ToLower(models[i].ID) < strings.ToLower(models[j].ID)

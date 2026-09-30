@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"easy-stock/backend/internal/hermes"
+	"easy-stock/backend/internal/agent"
 )
 
 var (
@@ -24,11 +24,11 @@ var (
 )
 
 type agentSettingsView struct {
-	ReasoningContext string                     `json:"reasoning_context"`
-	Reasoning        hermes.ReasoningCapability `json:"reasoning"`
-	ReasoningEffort  string                     `json:"reasoning_effort"`
-	Skills           []hermes.SkillInfo         `json:"skills"`
-	MCPServers       []mcpServerView            `json:"mcp_servers"`
+	ReasoningContext string                    `json:"reasoning_context"`
+	Reasoning        agent.ReasoningCapability `json:"reasoning"`
+	ReasoningEffort  string                    `json:"reasoning_effort"`
+	Skills           []agent.SkillInfo         `json:"skills"`
+	MCPServers       []mcpServerView           `json:"mcp_servers"`
 }
 
 type mcpServerView struct {
@@ -58,7 +58,7 @@ type skillUpdate struct {
 }
 
 type skillImporter interface {
-	ImportSkills([]hermes.SkillImportFile) ([]hermes.InstalledSkill, error)
+	ImportSkills([]agent.SkillImportFile) ([]agent.InstalledSkill, error)
 }
 
 type skillRemover interface {
@@ -111,8 +111,8 @@ type mcpServerUpdate struct {
 	SupportsParallelToolCall bool               `json:"supports_parallel_tool_calls"`
 }
 
-func (s *Server) settingsAgentGateway() (hermes.SettingsGateway, bool) {
-	gateway, ok := s.hermesGateway.(hermes.SettingsGateway)
+func (s *Server) settingsAgentGateway() (agent.SettingsGateway, bool) {
+	gateway, ok := s.agentGateway.(agent.SettingsGateway)
 	return gateway, ok
 }
 
@@ -162,12 +162,12 @@ func (s *Server) settingsAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if request.ReasoningContext != nil && *request.ReasoningContext != current.ReasoningContext {
-		writeError(w, http.StatusConflict, hermes.ErrReasoningContextChanged.Error())
+		writeError(w, http.StatusConflict, agent.ErrReasoningContextChanged.Error())
 		return
 	}
 	settings := mergeAgentSettings(current, request)
 	if err := gateway.SyncAgentSettings(settings); err != nil {
-		if errors.Is(err, hermes.ErrReasoningContextChanged) {
+		if errors.Is(err, agent.ErrReasoningContextChanged) {
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
@@ -183,7 +183,7 @@ func (s *Server) settingsAgentUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) settingsAgentSkillImport(w http.ResponseWriter, r *http.Request) {
-	importer, ok := s.hermesGateway.(skillImporter)
+	importer, ok := s.agentGateway.(skillImporter)
 	if !ok {
 		writeError(w, http.StatusServiceUnavailable, "Hermes Skill 导入服务不可用")
 		return
@@ -198,7 +198,7 @@ func (s *Server) settingsAgentSkillImport(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "请至少选择一个 Skill 文件，且文件数量不超过 1000 个")
 		return
 	}
-	files := make([]hermes.SkillImportFile, 0, len(parts))
+	files := make([]agent.SkillImportFile, 0, len(parts))
 	for index, header := range parts {
 		limit := int64(8 << 20)
 		if strings.HasSuffix(strings.ToLower(header.Filename), ".zip") {
@@ -227,7 +227,7 @@ func (s *Server) settingsAgentSkillImport(w http.ResponseWriter, r *http.Request
 		if index < len(paths) && strings.TrimSpace(paths[index]) != "" {
 			name = paths[index]
 		}
-		files = append(files, hermes.SkillImportFile{Name: name, Data: data})
+		files = append(files, agent.SkillImportFile{Name: name, Data: data})
 	}
 	installed, err := importer.ImportSkills(files)
 	if err != nil {
@@ -242,7 +242,7 @@ func (s *Server) settingsAgentSkillMarket(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) settingsAgentSkillDelete(w http.ResponseWriter, r *http.Request) {
-	remover, ok := s.hermesGateway.(skillRemover)
+	remover, ok := s.agentGateway.(skillRemover)
 	if !ok {
 		writeError(w, http.StatusServiceUnavailable, "Hermes Skill 删除服务不可用")
 		return
@@ -278,7 +278,7 @@ func (s *Server) settingsAgentSkillMarketSources(w http.ResponseWriter, r *http.
 }
 
 func (s *Server) settingsAgentSkillInstallGit(w http.ResponseWriter, r *http.Request) {
-	importer, ok := s.hermesGateway.(skillImporter)
+	importer, ok := s.agentGateway.(skillImporter)
 	if !ok {
 		writeError(w, http.StatusServiceUnavailable, "Hermes Skill 导入服务不可用")
 		return
@@ -359,7 +359,7 @@ func (s *Server) settingsAgentSkillInstallGit(w http.ResponseWriter, r *http.Req
 	if emitProgress != nil {
 		emitProgress(skillDownloadProgress{Type: "processing", Downloaded: int64(len(data)), Total: int64(len(data))})
 	}
-	installed, err := importer.ImportSkills([]hermes.SkillImportFile{{Name: "github-skill.zip", Data: data}})
+	installed, err := importer.ImportSkills([]agent.SkillImportFile{{Name: "github-skill.zip", Data: data}})
 	if err != nil {
 		fail(http.StatusBadRequest, "安装 Skill 失败: "+err.Error())
 		return
@@ -375,13 +375,13 @@ func (s *Server) settingsAgentSkillInstallGit(w http.ResponseWriter, r *http.Req
 }
 
 type skillDownloadProgress struct {
-	Type           string                  `json:"type"`
-	URL            string                  `json:"url,omitempty"`
-	Downloaded     int64                   `json:"downloaded,omitempty"`
-	Total          int64                   `json:"total,omitempty"`
-	BytesPerSecond int64                   `json:"bytes_per_second,omitempty"`
-	Data           []hermes.InstalledSkill `json:"data,omitempty"`
-	Error          string                  `json:"error,omitempty"`
+	Type           string                 `json:"type"`
+	URL            string                 `json:"url,omitempty"`
+	Downloaded     int64                  `json:"downloaded,omitempty"`
+	Total          int64                  `json:"total,omitempty"`
+	BytesPerSecond int64                  `json:"bytes_per_second,omitempty"`
+	Data           []agent.InstalledSkill `json:"data,omitempty"`
+	Error          string                 `json:"error,omitempty"`
 }
 
 func readSkillArchive(source io.Reader, total int64, emit func(skillDownloadProgress)) ([]byte, error) {
@@ -496,7 +496,7 @@ func filterGitHubSkillArchive(data []byte, prefix string) ([]byte, error) {
 	return output.Bytes(), nil
 }
 
-func buildAgentSettingsView(settings hermes.AgentSettings) agentSettingsView {
+func buildAgentSettingsView(settings agent.AgentSettings) agentSettingsView {
 	view := agentSettingsView{ReasoningContext: settings.ReasoningContext, ReasoningEffort: settings.ReasoningEffort, Reasoning: settings.Reasoning, Skills: settings.Skills, MCPServers: make([]mcpServerView, 0, len(settings.MCPServers))}
 	for _, server := range settings.MCPServers {
 		item := mcpServerView{
@@ -522,7 +522,7 @@ func buildAgentSettingsView(settings hermes.AgentSettings) agentSettingsView {
 	return view
 }
 
-func mergeAgentSettings(current hermes.AgentSettings, request agentSettingsUpdateRequest) hermes.AgentSettings {
+func mergeAgentSettings(current agent.AgentSettings, request agentSettingsUpdateRequest) agent.AgentSettings {
 	if request.ReasoningEffort != nil {
 		current.ReasoningEffort = strings.ToLower(strings.TrimSpace(*request.ReasoningEffort))
 	}
@@ -540,11 +540,11 @@ func mergeAgentSettings(current hermes.AgentSettings, request agentSettingsUpdat
 	if request.MCPServers == nil {
 		return current
 	}
-	existingServers := map[string]hermes.MCPServerInfo{}
+	existingServers := map[string]agent.MCPServerInfo{}
 	for _, server := range current.MCPServers {
 		existingServers[server.Name] = server
 	}
-	current.MCPServers = make([]hermes.MCPServerInfo, 0, len(*request.MCPServers))
+	current.MCPServers = make([]agent.MCPServerInfo, 0, len(*request.MCPServers))
 	for _, input := range *request.MCPServers {
 		name := strings.TrimSpace(input.Name)
 		originalName := strings.TrimSpace(input.OriginalName)
@@ -590,7 +590,7 @@ func mergeProtectedMap(existing map[string]string, updates map[string]*string, c
 func validateAgentSettingsUpdate(request agentSettingsUpdateRequest) error {
 	if request.ReasoningEffort != nil {
 		effort := strings.ToLower(strings.TrimSpace(*request.ReasoningEffort))
-		if !hermes.IsValidReasoningEffort(effort) {
+		if !agent.IsValidReasoningEffort(effort) {
 			return fmt.Errorf("无效的思考等级: %s", *request.ReasoningEffort)
 		}
 	}
