@@ -5098,7 +5098,7 @@ a:focus-visible {
 .ai-chat-workspace {
 	display: grid;
 	grid-template-columns: 250px minmax(0, 1fr);
-	min-height: calc(100vh - 150px);
+	min-height: calc(100vh - 80px);
 	max-width: 1840px;
 	margin: 0 auto;
 	border: 1px solid var(--line);
@@ -5621,7 +5621,7 @@ a:focus-visible {
 }
 
 @media (max-width: 760px) {
-	.ai-chat-workspace { grid-template-columns: 1fr; min-height: calc(100vh - 118px); }
+	.ai-chat-workspace { grid-template-columns: 1fr; min-height: calc(100vh - 80px); }
 	.ai-thread-rail { grid-template-rows: auto auto; border-right: 0; border-bottom: 1px solid var(--line); }
 	.ai-thread-list { display: flex; overflow-x: auto; }
 	.ai-thread-list > button { flex: 0 0 190px; }

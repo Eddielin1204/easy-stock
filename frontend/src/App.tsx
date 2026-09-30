@@ -410,7 +410,7 @@ export function App() {
 				</div>
 			</aside>
 			<div className="app-shell">
-			<div className={`workspace-topbar ${workspaceMode !== 'stock-ai' ? `collapsible ${topbarExpanded ? 'expanded' : ''}` : ''}`}>
+			{workspaceMode !== 'ai' && <div className={`workspace-topbar ${workspaceMode !== 'stock-ai' ? `collapsible ${topbarExpanded ? 'expanded' : ''}` : ''}`}>
 				{workspaceMode !== 'stock-ai' && <button
 					type="button"
 					className="topbar-toggle"
@@ -446,7 +446,7 @@ export function App() {
 					</button>
 				</div>
 			</header>
-			</div>
+			</div>}
 
 			{workspaceMode === 'token-usage' ? <TokenUsageWorkspace config={config} refreshKey={tokenUsageRefreshKey} /> : workspaceMode === 'themes' ? <>
 			<section className="market-strip" aria-label="市场概览">
