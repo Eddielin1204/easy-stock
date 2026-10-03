@@ -55,6 +55,7 @@ type PromptResult struct {
 	SessionID       string
 	StoredSessionID string
 	Usage           TokenUsage
+	Progress        PromptProgress
 }
 
 type Process interface {
@@ -731,27 +732,49 @@ func (r *HermesRuntime) prompt(ctx context.Context, prompt, browserStatePath str
 	submitted := false
 	result := PromptResult{}
 	var streamed strings.Builder
+	watchdog := newPromptWatchdog(options)
+	defer watchdog.close()
+	failure := func(err error) (PromptResult, error) {
+		if result.Content == "" {
+			result.Content = streamed.String()
+		}
+		result.Progress = watchdog.snapshot()
+		return result, err
+	}
 	approvalSequence := 0
 	for {
 		select {
 		case <-ctx.Done():
-			return PromptResult{}, ctx.Err()
+			return failure(ctx.Err())
+		case <-watchdog.channel():
+			err := watchdog.timeout()
+			if timeout, ok := err.(*PromptTimeoutError); ok {
+				key, _ := r.ModelAPIKey()
+				detail := sanitizeHermesDiagnostic(diagnostics.String(), key)
+				if len(detail) > 1200 {
+					detail = detail[len(detail)-1200:]
+				}
+				timeout.RuntimeDetail = detail
+			}
+			return failure(err)
 		case item := <-lines:
 			if item.err != nil {
 				waitForDiagnostics(diagnosticsDone)
-				return PromptResult{}, r.hermesFailure(fmt.Sprintf("Hermes 会话结束: %v", item.err), diagnostics.String())
+				return failure(r.hermesFailure(fmt.Sprintf("Hermes 会话结束: %v", item.err), diagnostics.String()))
 			}
 			if len(item.line) == 0 {
 				waitForDiagnostics(diagnosticsDone)
-				return PromptResult{}, r.hermesFailure("Hermes 会话意外结束", diagnostics.String())
+				return failure(r.hermesFailure("Hermes 会话意外结束", diagnostics.String()))
 			}
 			var frame rpcFrame
 			if err := json.Unmarshal(item.line, &frame); err != nil {
 				continue
 			}
 			if frame.Error != nil {
-				return PromptResult{}, r.hermesFailure(fmt.Sprintf("Hermes: %s", frame.Error.Message), diagnostics.String())
+				return failure(r.hermesFailure(fmt.Sprintf("Hermes: %s", frame.Error.Message), diagnostics.String()))
 			}
+			watchdog.observe(frame)
+			result.Progress = watchdog.snapshot()
 			if usage := usageFromFrame(frame); usage.TotalTokens > 0 {
 				result.Usage = usage
 			}
@@ -759,7 +782,7 @@ func (r *HermesRuntime) prompt(ctx context.Context, prompt, browserStatePath str
 				created = true
 				sessionWorkDir := firstNonEmpty(processOptions.workDir, r.workDir)
 				if err := writeRPC("1", "session.create", map[string]any{"cwd": sessionWorkDir}); err != nil {
-					return PromptResult{}, err
+					return failure(err)
 				}
 				continue
 			}
@@ -767,11 +790,11 @@ func (r *HermesRuntime) prompt(ctx context.Context, prompt, browserStatePath str
 				result.SessionID = stringValue(frame.Result["session_id"])
 				result.StoredSessionID = firstNonEmpty(stringValue(frame.Result["stored_session_id"]), result.SessionID)
 				if result.SessionID == "" {
-					return PromptResult{}, errors.New("Hermes 未返回会话 ID")
+					return failure(errors.New("Hermes 未返回会话 ID"))
 				}
 				submitted = true
 				if err := writeRPC("2", "prompt.submit", map[string]any{"session_id": result.SessionID, "text": prompt}); err != nil {
-					return PromptResult{}, err
+					return failure(err)
 				}
 				continue
 			}
@@ -781,7 +804,7 @@ func (r *HermesRuntime) prompt(ctx context.Context, prompt, browserStatePath str
 					continue
 				}
 				if err := writeRPCResult(frame.ID, map[string]any{"choice": "session"}); err != nil {
-					return PromptResult{}, fmt.Errorf("Hermes 自动授权失败: %w", err)
+					return failure(fmt.Errorf("Hermes 自动授权失败: %w", err))
 				}
 			case "clarify":
 				// One-shot backend tasks have no interactive renderer. An empty answer
@@ -793,7 +816,7 @@ func (r *HermesRuntime) prompt(ctx context.Context, prompt, browserStatePath str
 						clarifyResult = map[string]any{"answers": map[string]string{}}
 					}
 					if err := writeRPCResult(frame.ID, clarifyResult); err != nil {
-						return PromptResult{}, fmt.Errorf("Hermes 澄清请求响应失败: %w", err)
+						return failure(fmt.Errorf("Hermes 澄清请求响应失败: %w", err))
 					}
 				}
 			case "approval.request":
@@ -803,27 +826,27 @@ func (r *HermesRuntime) prompt(ctx context.Context, prompt, browserStatePath str
 				approvalSequence++
 				sessionID := firstNonEmpty(stringValue(frame.Params["session_id"]), result.SessionID)
 				if sessionID == "" {
-					return PromptResult{}, errors.New("Hermes 自动授权请求缺少会话 ID")
+					return failure(errors.New("Hermes 自动授权请求缺少会话 ID"))
 				}
 				if err := writeRPC(fmt.Sprintf("approval-%d", approvalSequence), "approval.respond", map[string]any{
 					"session_id": sessionID,
 					"choice":     "session",
 				}); err != nil {
-					return PromptResult{}, fmt.Errorf("Hermes 自动授权失败: %w", err)
+					return failure(fmt.Errorf("Hermes 自动授权失败: %w", err))
 				}
 			case "message.delta":
 				streamed.WriteString(firstNonEmpty(eventText(frame, "delta"), eventText(frame, "text")))
 			case "message.complete":
 				result.Content = strings.TrimSpace(firstNonEmpty(eventText(frame, "content"), eventText(frame, "text"), streamed.String()))
 				if result.Content == "" {
-					return PromptResult{}, errors.New("Hermes 没有返回有效内容")
+					return failure(errors.New("Hermes 没有返回有效内容"))
 				}
 				if err := embeddedModelResponseError(result.Content); err != nil {
-					return PromptResult{}, err
+					return failure(err)
 				}
 				return result, nil
 			case "message.error", "session.error", "run.error":
-				return PromptResult{}, r.hermesFailure(firstNonEmpty(eventText(frame, "message"), "Hermes 执行失败"), diagnostics.String())
+				return failure(r.hermesFailure(firstNonEmpty(eventText(frame, "message"), "Hermes 执行失败"), diagnostics.String()))
 			}
 		}
 	}

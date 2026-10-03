@@ -10,6 +10,26 @@ const report: ResearchReport = {
 const analysis = {name:'测试股票',symbol:'600519.SH',analysis_id:'analysis-123',scorecard:{overall:60},research_report:report} as StockAIAnalysis;
 
 describe('Evidence-led stock research',()=>{
+	it('offers continuation only for incomplete tasks with saved stages',()=>{
+		const job = {id:'a',status:'degraded',stage:'completed',message:'模型响应中断',request:report.request,started_at:'',updated_at:'',resume_available:true};
+		const markup = renderToStaticMarkup(<StockResearchProgress job={job} onCancel={()=>{}} onResume={()=>{}} />);
+		expect(markup).toContain('继续研究');
+		expect(markup).not.toContain('停止本次研究');
+		for (const current of [{...job,resume_available:false},{...job,status:'running'}]) {
+			expect(renderToStaticMarkup(<StockResearchProgress job={current} onCancel={()=>{}} onResume={()=>{}} />)).not.toContain('继续研究');
+		}
+	});
+	it('shows the concrete evidence gap in the report and copied text',()=>{
+		const detailed = {...analysis, research_report:{...report, evidence_level:'limited', evidence_reasons:['股权转让价格和受让方身份尚未核实']}};
+		const markup = renderToStaticMarkup(<StockResearchReportView analysis={detailed}/>);
+		expect(markup).toContain('证据有限的原因');
+		expect(markup).toContain('股权转让价格和受让方身份尚未核实');
+		expect(researchPlanText(detailed)).toContain('证据评估依据：股权转让价格和受让方身份尚未核实');
+	});
+	it('explains historical reports using unresolved supplement questions',()=>{
+		const historical = {...analysis, research_report:{...report, questions:[{question:'缺少季度收入构成',why:'影响业绩判断',tool:'source',query:'收入构成',status:'not_found'}]}};
+		expect(renderToStaticMarkup(<StockResearchReportView analysis={historical}/>)).toContain('缺少季度收入构成');
+	});
 	it('keeps missing evidence and no-plan decisions visible without fabricated prices',()=>{
 		const markup=renderToStaticMarkup(<StockResearchReportView analysis={analysis}/>);
 		expect(markup).toContain('暂不形成交易计划');

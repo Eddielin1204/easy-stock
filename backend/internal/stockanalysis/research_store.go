@@ -14,18 +14,21 @@ import (
 )
 
 type ResearchJob struct {
-	ID           string                `json:"id"`
-	Request      ResearchRequest       `json:"request"`
-	Status       string                `json:"status"`
-	Stage        string                `json:"stage"`
-	Message      string                `json:"message"`
-	Error        string                `json:"error,omitempty"`
-	StartedAt    time.Time             `json:"started_at"`
-	UpdatedAt    time.Time             `json:"updated_at"`
-	CompletedAt  *time.Time            `json:"completed_at,omitempty"`
-	Analysis     *Analysis             `json:"analysis,omitempty"`
-	Snapshot     *ResearchSnapshot     `json:"snapshot,omitempty"`
-	Verification *ResearchVerification `json:"verification,omitempty"`
+	ID              string                `json:"id"`
+	Request         ResearchRequest       `json:"request"`
+	Status          string                `json:"status"`
+	Stage           string                `json:"stage"`
+	Message         string                `json:"message"`
+	Error           string                `json:"error,omitempty"`
+	StartedAt       time.Time             `json:"started_at"`
+	UpdatedAt       time.Time             `json:"updated_at"`
+	CompletedAt     *time.Time            `json:"completed_at,omitempty"`
+	Analysis        *Analysis             `json:"analysis,omitempty"`
+	Snapshot        *ResearchSnapshot     `json:"snapshot,omitempty"`
+	Verification    *ResearchVerification `json:"verification,omitempty"`
+	Checkpoint      *ResearchCheckpoint   `json:"checkpoint,omitempty"`
+	ResumedFrom     string                `json:"resumed_from,omitempty"`
+	ResumeAvailable bool                  `json:"resume_available,omitempty"`
 }
 
 type ResearchJobSummary struct {
@@ -42,6 +45,8 @@ type ResearchJobSummary struct {
 }
 
 func (job ResearchJob) Public() ResearchJob {
+	job.ResumeAvailable = job.Status != "running" && job.Status != "queued" && job.Status != "succeeded" && job.Snapshot != nil && job.Checkpoint.resumable()
+	job.Checkpoint = nil
 	job.Snapshot = nil
 	if job.Analysis != nil && job.Analysis.ResearchReport == nil {
 		baseline := QuantitativeOnly(*job.Analysis)
@@ -234,7 +239,7 @@ func (s *ResearchStore) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	if job.Snapshot != nil {
-		if _, err = tx.ExecContext(ctx, `DELETE FROM stock_research_snapshots WHERE id=?`, job.Snapshot.ID); err != nil {
+		if _, err = tx.ExecContext(ctx, `DELETE FROM stock_research_snapshots WHERE id=? AND NOT EXISTS(SELECT 1 FROM stock_research_jobs WHERE json_extract(content_json,'$.snapshot.id')=?)`, job.Snapshot.ID, job.Snapshot.ID); err != nil {
 			return err
 		}
 	}

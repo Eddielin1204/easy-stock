@@ -484,10 +484,16 @@ func (r *CodexRuntime) PromptWithOptions(ctx context.Context, prompt string, opt
 		return e
 	}
 	result := PromptResult{Runtime: Codex}
+	watchdog := newPromptWatchdog(options)
+	defer watchdog.close()
 	for {
 		select {
 		case <-ctx.Done():
+			result.Progress = watchdog.snapshot()
 			return result, ctx.Err()
+		case <-watchdog.channel():
+			result.Progress = watchdog.snapshot()
+			return result, watchdog.timeout()
 		case f, ok := <-frames:
 			if !ok {
 				return result, errors.New("Codex 会话意外结束")
@@ -495,7 +501,11 @@ func (r *CodexRuntime) PromptWithOptions(ctx context.Context, prompt string, opt
 			if f.Error != nil {
 				return result, errors.New(f.Error.Message)
 			}
+			watchdog.observe(f)
+			result.Progress = watchdog.snapshot()
 			switch eventType(f) {
+			case "message.delta":
+				result.Content += firstNonEmpty(eventText(f, "delta"), eventText(f, "text"))
 			case "gateway.ready":
 				err = send("create", "session.create", map[string]any{})
 			case "message.complete":

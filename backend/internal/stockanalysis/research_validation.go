@@ -91,21 +91,44 @@ func validateResearch(result *ResearchSynthesis, snapshot ResearchSnapshot) ([]s
 	case "sufficient", "limited", "insufficient":
 	default:
 		result.EvidenceLevel = "limited"
+		result.EvidenceReasons = append(result.EvidenceReasons, "模型未返回有效的证据充分度，暂按有限处理")
 	}
-	if len(result.Support) < 2 || len(snapshot.DailyBars) < 20 {
+	if len(result.Support) < 2 {
 		result.EvidenceLevel = "insufficient"
+		result.EvidenceReasons = append(result.EvidenceReasons, "有效支持依据少于2条，尚不足以支撑核心判断")
+	}
+	if len(snapshot.DailyBars) < 20 {
+		result.EvidenceLevel = "insufficient"
+		result.EvidenceReasons = append(result.EvidenceReasons, "历史日线样本不足20日，趋势依据不足")
 	}
 	if result.EvidenceLevel == "sufficient" {
 		coverage := map[string]bool{}
 		for _, claim := range append(append([]ResearchClaim{result.Thesis}, result.Support...), result.Counter...) {
 			for _, id := range claim.SourceIDs {
+				if sources[id].Kind == "announcement" && !ResearchSourceHasBody(sources[id]) {
+					continue
+				}
 				coverage[sources[id].Kind] = true
 			}
 		}
 		if !coverage["announcement"] || (!coverage["disclosure"] && !coverage["company_profile"]) {
 			result.EvidenceLevel = "limited"
 			notes = append(notes, "公司披露与业务证据覆盖不完整，证据充分度不标为充分")
+			if !coverage["announcement"] {
+				result.EvidenceReasons = append(result.EvidenceReasons, "核心判断未引用可用的公司公告正文，事件依据尚未核实")
+			}
+			if !coverage["disclosure"] && !coverage["company_profile"] {
+				result.EvidenceReasons = append(result.EvidenceReasons, "核心判断未引用财务披露或业务资料")
+			}
 		}
+	}
+	if result.EvidenceLevel != "sufficient" {
+		result.EvidenceReasons = uniqueStrings(append(result.EvidenceReasons, result.Limitations...), 4)
+		if len(result.EvidenceReasons) == 0 && result.MainConflict != "" {
+			result.EvidenceReasons = []string{result.MainConflict}
+		}
+	} else {
+		result.EvidenceReasons = nil
 	}
 	if len(result.Counter) == 0 {
 		result.Limitations = append(result.Limitations, "尚未取得直接反证，不表示不存在反对理由")

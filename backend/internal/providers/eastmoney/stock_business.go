@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -72,17 +73,27 @@ func (c *Client) StockBusinessProfile(ctx context.Context, symbol string) (found
 
 // StockFundamentals returns the most recent published main financial metrics.
 func (c *Client) StockFundamentals(ctx context.Context, symbol string) (foundation.StockFundamentals, error) {
-	normalized, err := foundation.NormalizeSymbol(symbol)
+	items, err := c.StockFinancialHistory(ctx, symbol, 1)
 	if err != nil {
 		return foundation.StockFundamentals{}, err
+	}
+	return items[0], nil
+}
+
+// StockFinancialHistory returns bounded, newest-first cumulative disclosures.
+func (c *Client) StockFinancialHistory(ctx context.Context, symbol string, limit int) ([]foundation.StockFundamentals, error) {
+	limit = max(1, min(limit, 8))
+	normalized, err := foundation.NormalizeSymbol(symbol)
+	if err != nil {
+		return nil, err
 	}
 	endpoint := c.f10BaseURL + "/api/data/v1/get"
 	params := url.Values{}
 	params.Set("reportName", "RPT_F10_FINANCE_MAINFINADATA")
-	params.Set("columns", "SECUCODE,REPORT_DATE,REPORT_DATE_NAME,TOTALOPERATEREVE,TOTALOPERATEREVETZ,PARENTNETPROFIT,PARENTNETPROFITTZ,KCFJCXSYJLR,KCFJCXSYJLRTZ,EPSJB,ROEJQ,XSMLL,ZCFZL,MGJYXJJE")
+	params.Set("columns", "SECUCODE,REPORT_DATE,NOTICE_DATE,REPORT_DATE_NAME,TOTALOPERATEREVE,TOTALOPERATEREVETZ,PARENTNETPROFIT,PARENTNETPROFITTZ,KCFJCXSYJLR,KCFJCXSYJLRTZ,EPSJB,ROEJQ,XSMLL,ZCFZL,MGJYXJJE")
 	params.Set("filter", fmt.Sprintf("(SECUCODE=\"%s\")", escapeEastMoneyFilter(normalized.Canonical)))
 	params.Set("pageNumber", "1")
-	params.Set("pageSize", "1")
+	params.Set("pageSize", strconv.Itoa(limit))
 	params.Set("sortTypes", "-1")
 	params.Set("sortColumns", "REPORT_DATE")
 	params.Set("source", "HSF10")
@@ -96,6 +107,7 @@ func (c *Client) StockFundamentals(ctx context.Context, symbol string) (foundati
 			Data []struct {
 				Symbol                    string         `json:"SECUCODE"`
 				ReportDate                string         `json:"REPORT_DATE"`
+				NoticeDate                string         `json:"NOTICE_DATE"`
 				ReportName                string         `json:"REPORT_DATE_NAME"`
 				Revenue                   flexibleFloat  `json:"TOTALOPERATEREVE"`
 				RevenueYearOverYear       flexibleFloat  `json:"TOTALOPERATEREVETZ"`
@@ -112,36 +124,43 @@ func (c *Client) StockFundamentals(ctx context.Context, symbol string) (foundati
 		} `json:"result"`
 	}
 	if err := c.getJSONWithRetry(ctx, requestURL, &payload); err != nil {
-		return foundation.StockFundamentals{}, fmt.Errorf("eastmoney stock fundamentals: %w", err)
+		return nil, fmt.Errorf("eastmoney stock fundamentals: %w", err)
 	}
 	if !payload.Success {
-		return foundation.StockFundamentals{}, fmt.Errorf("eastmoney stock fundamentals: %s", payload.Message)
+		return nil, fmt.Errorf("eastmoney stock fundamentals: %s", payload.Message)
 	}
 	if payload.Result == nil || len(payload.Result.Data) == 0 {
-		return foundation.StockFundamentals{}, fmt.Errorf("eastmoney stock fundamentals returned no data for %s", normalized.Canonical)
+		return nil, fmt.Errorf("eastmoney stock fundamentals returned no data for %s", normalized.Canonical)
 	}
-	raw := payload.Result.Data[0]
-	deductedAvailable := raw.DeductedNetProfit != nil
-	deductedNetProfit := 0.0
-	deductedNetProfitYearOverYear := 0.0
-	deductedReportDate := ""
-	if raw.DeductedNetProfit != nil {
-		deductedNetProfit = float64(*raw.DeductedNetProfit)
-		deductedReportDate = strings.TrimSpace(raw.ReportDate)
+	items := make([]foundation.StockFundamentals, 0, min(limit, len(payload.Result.Data)))
+	for _, raw := range payload.Result.Data {
+		if len(items) >= limit {
+			break
+		}
+		deductedAvailable := raw.DeductedNetProfit != nil
+		deductedNetProfit := 0.0
+		deductedNetProfitYearOverYear := 0.0
+		deductedReportDate := ""
+		if raw.DeductedNetProfit != nil {
+			deductedNetProfit = float64(*raw.DeductedNetProfit)
+			deductedReportDate = strings.TrimSpace(raw.ReportDate)
+		}
+		if raw.DeductedNetProfitYoY != nil {
+			deductedNetProfitYearOverYear = float64(*raw.DeductedNetProfitYoY)
+		}
+		items = append(items, foundation.StockFundamentals{
+			PublishedAt: parseEastMoneyTime(raw.NoticeDate),
+			Symbol:      normalized.Canonical, ReportDate: strings.TrimSpace(raw.ReportDate), ReportName: strings.TrimSpace(raw.ReportName),
+			Revenue: float64(raw.Revenue), RevenueYearOverYear: float64(raw.RevenueYearOverYear),
+			NetProfit: float64(raw.NetProfit), NetProfitYearOverYear: float64(raw.NetProfitYearOverYear),
+			DeductedNetProfit: deductedNetProfit, DeductedNetProfitYearOverYear: deductedNetProfitYearOverYear,
+			DeductedNetProfitAvailable: deductedAvailable, DeductedNetProfitReportDate: deductedReportDate, EPS: float64(raw.EPS),
+			ROE: float64(raw.ROE), GrossMargin: float64(raw.GrossMargin), DebtRatio: float64(raw.DebtRatio),
+			OperatingCashFlowPerShare: float64(raw.OperatingCashFlowPerShare),
+			Meta:                      foundation.SourceMeta{Source: "eastmoney:f10-financials", SourceURL: requestURL, FetchedAt: time.Now(), LatencyMS: time.Since(start).Milliseconds()},
+		})
 	}
-	if raw.DeductedNetProfitYoY != nil {
-		deductedNetProfitYearOverYear = float64(*raw.DeductedNetProfitYoY)
-	}
-	return foundation.StockFundamentals{
-		Symbol: normalized.Canonical, ReportDate: strings.TrimSpace(raw.ReportDate), ReportName: strings.TrimSpace(raw.ReportName),
-		Revenue: float64(raw.Revenue), RevenueYearOverYear: float64(raw.RevenueYearOverYear),
-		NetProfit: float64(raw.NetProfit), NetProfitYearOverYear: float64(raw.NetProfitYearOverYear),
-		DeductedNetProfit: deductedNetProfit, DeductedNetProfitYearOverYear: deductedNetProfitYearOverYear,
-		DeductedNetProfitAvailable: deductedAvailable, DeductedNetProfitReportDate: deductedReportDate, EPS: float64(raw.EPS),
-		ROE: float64(raw.ROE), GrossMargin: float64(raw.GrossMargin), DebtRatio: float64(raw.DebtRatio),
-		OperatingCashFlowPerShare: float64(raw.OperatingCashFlowPerShare),
-		Meta:                      foundation.SourceMeta{Source: "eastmoney:f10-financials", SourceURL: requestURL, FetchedAt: time.Now(), LatencyMS: time.Since(start).Milliseconds()},
-	}, nil
+	return items, nil
 }
 
 func normalizeBusinessText(value string) string {

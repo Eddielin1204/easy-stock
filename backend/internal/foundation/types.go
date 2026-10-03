@@ -165,6 +165,7 @@ type StockBusinessProfile struct {
 // units: amounts are CNY and percentage fields are percentage points.
 type StockFundamentals struct {
 	Symbol                        string     `json:"symbol"`
+	PublishedAt                   time.Time  `json:"published_at,omitempty"`
 	ReportDate                    string     `json:"report_date"`
 	ReportName                    string     `json:"report_name"`
 	Revenue                       float64    `json:"revenue"`

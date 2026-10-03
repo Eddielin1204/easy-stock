@@ -322,6 +322,20 @@ func BoundModel(ctx context.Context) string {
 	return ""
 }
 
+// The bound configuration is copied at task start. Its digest includes the
+// reasoning policy, so a resumed research cannot silently mix configurations.
+func BoundConfigurationIdentity(ctx context.Context) string {
+	if binding, ok := ctx.Value(bindingKey{}).(*taskBinding); ok {
+		data, err := os.ReadFile(filepath.Join(binding.hermes.home, "config.yaml"))
+		if err != nil {
+			return binding.identity
+		}
+		hash := sha256.Sum256(data)
+		return binding.identity + ":" + hex.EncodeToString(hash[:])
+	}
+	return ""
+}
+
 func BoundStatus(ctx context.Context) (Status, bool) {
 	if binding, ok := ctx.Value(bindingKey{}).(*taskBinding); ok {
 		return binding.status, true

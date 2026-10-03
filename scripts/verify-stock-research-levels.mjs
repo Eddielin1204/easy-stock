@@ -42,7 +42,7 @@ function audit(job, snapshot, policy, tokens) {
   }
   check('request level', () => assert.equal(report.analysis_level, job.request.analysis_level));
   check('call count', () => assert.ok(report.attempts.length === policy.calls || (job.request.analysis_level === 'deep' && report.attempts.length === 4) || (job.request.analysis_level === 'standard' && report.attempts.length === 3)));
-  check('compression version', () => assert.equal(report.compression.version, 'evidence-pack-v2'));
+  check('compression version', () => assert.equal(report.compression.version, 'evidence-pack-v5'));
   if (policy.bytes) check('evidence budget', () => assert.ok(report.compression.selected_content_bytes <= policy.bytes));
   check('snapshot identity', () => { assert.equal(report.snapshot_id, snapshot.id); assert.equal(report.snapshot_version, snapshot.version); });
   check('nonempty judgment and actions', () => {

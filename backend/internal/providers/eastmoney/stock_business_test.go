@@ -75,3 +75,20 @@ func TestStockFundamentalsMarksMissingDeductedProfitUnavailable(t *testing.T) {
 		t.Fatalf("missing deducted profit was treated as available: %+v", item)
 	}
 }
+
+func TestStockFinancialHistoryRequestsComparablePeriodsAndPublicationDate(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("pageSize") != "8" || !strings.Contains(r.URL.Query().Get("columns"), "NOTICE_DATE") {
+			t.Errorf("history request missing periods or publication date: %s", r.URL)
+		}
+		_, _ = w.Write([]byte(`{"success":true,"result":{"data":[{"REPORT_DATE":"2026-06-30 00:00:00","NOTICE_DATE":"2026-08-25 00:00:00","TOTALOPERATEREVE":260,"KCFJCXSYJLR":12},{"REPORT_DATE":"2026-03-31 00:00:00","NOTICE_DATE":"2026-04-29 00:00:00","TOTALOPERATEREVE":100,"KCFJCXSYJLR":null}]}}`))
+	}))
+	defer server.Close()
+	items, err := NewClient(WithF10BaseURL(server.URL)).StockFinancialHistory(context.Background(), "002074.SZ", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].Revenue != 260 || items[0].PublishedAt.IsZero() || items[0].PublishedAt.Equal(items[1].PublishedAt) || items[1].DeductedNetProfitAvailable {
+		t.Fatalf("history dates or missing-value semantics lost: %+v", items)
+	}
+}

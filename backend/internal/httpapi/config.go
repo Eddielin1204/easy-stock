@@ -68,6 +68,14 @@ type StockBusinessProfileProvider interface {
 	StockFundamentals(ctx context.Context, symbol string) (foundation.StockFundamentals, error)
 }
 
+type StockFinancialHistoryProvider interface {
+	StockFinancialHistory(ctx context.Context, symbol string, limit int) ([]foundation.StockFundamentals, error)
+}
+
+type MarketAnnouncementContentProvider interface {
+	MarketAnnouncementContent(ctx context.Context, id string) (string, error)
+}
+
 type StockDirectoryProvider interface {
 	StockCatalog(ctx context.Context) ([]foundation.StockCatalogEntry, error)
 }

@@ -526,6 +526,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/stocks/research/{id}", s.stockResearchGet)
 	s.mux.HandleFunc("DELETE /api/v1/stocks/research/{id}", s.stockResearchDelete)
 	s.mux.HandleFunc("POST /api/v1/stocks/research/{id}/cancel", s.stockResearchCancel)
+	s.mux.HandleFunc("POST /api/v1/stocks/research/{id}/resume", s.stockResearchResume)
 	s.mux.HandleFunc("POST /api/v1/stocks/research/{id}/verify", s.stockResearchVerify)
 	s.mux.HandleFunc("GET /api/v1/stocks/research/{id}/snapshot", s.stockResearchSnapshot)
 	s.mux.HandleFunc("GET /api/v1/stocks/directory", s.stockDirectoryHandler)

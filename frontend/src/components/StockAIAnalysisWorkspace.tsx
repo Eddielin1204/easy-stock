@@ -79,6 +79,7 @@ type Props = {
 	config: BackendConfig | null;
 	refreshKey: number;
 	mode: StockAIWorkspaceMode;
+	onModeChange: (mode: StockAIWorkspaceMode) => void;
 	initialAnalysis?: StockAIAnalysis | null;
 	onInitialAnalysisConsumed?: () => void;
 	onAskAI: (analysis: StockAIAnalysis) => void;
@@ -117,7 +118,7 @@ function writeStoredValue(key: string, value: string) { try { window.localStorag
 
 type DirectoryState = 'idle' | 'loading' | 'cached' | 'ready' | 'error';
 type HotRankState = 'idle' | 'loading' | 'ready' | 'error';
-export function StockAIAnalysisWorkspace({ config, refreshKey, mode, initialAnalysis, onInitialAnalysisConsumed, onAskAI, onOpenSettings }: Props) {
+export function StockAIAnalysisWorkspace({ config, refreshKey, mode, onModeChange, initialAnalysis, onInitialAnalysisConsumed, onAskAI, onOpenSettings }: Props) {
 	const research = useStockResearch(config);
 	const [purpose, setPurpose] = useState<ResearchRequest['purpose']>('observe');
 	const [horizon, setHorizon] = useState<ResearchRequest['horizon']>('swing');
@@ -404,13 +405,18 @@ export function StockAIAnalysisWorkspace({ config, refreshKey, mode, initialAnal
 	return (
 		<section className="stock-ai-workspace">
 			<AnalysisSearch query={query} mode={mode} directory={directory} directoryState={directoryState} onQuery={setQuery} onSubmit={submit} loading={state === 'loading' || state === 'refining'} llmProfiles={llmProfiles} activeLLMProfileID={activeLLMProfileID} config={config} refreshKey={String(refreshKey)} choiceBusy={aiChoiceBusy} onModelChange={(id) => void switchResearchModel(id)} />
+			<nav className="mode-nav stock-ai-mode-nav" aria-label="工作台模式">
+				<button type="button" className={mode === 'analysis' ? 'active' : ''} aria-pressed={mode === 'analysis'} onClick={() => onModeChange('analysis')}><BrainCircuit size={16} aria-hidden="true" />个股分析</button>
+				<button type="button" className={mode === 'expectation' ? 'active' : ''} aria-pressed={mode === 'expectation'} onClick={() => onModeChange('expectation')}><Target size={16} aria-hidden="true" />隔日预期</button>
+				<button type="button" className={mode === 'risk' ? 'active' : ''} aria-pressed={mode === 'risk'} onClick={() => onModeChange('risk')}><ShieldCheck size={16} aria-hidden="true" />风控执行</button>
+			</nav>
 			{levelDialogOpen && <ResearchLevelDialog value={researchLevel} onChange={setResearchLevel} onCancel={() => setLevelDialogOpen(false)} onConfirm={confirmResearchLevel} />}
 			<StockResearchOptions purpose={purpose} horizon={horizon} cost={cost} onPurpose={setPurpose} onHorizon={setHorizon} onCost={setCost} />
 			<div className={`stock-ai-shell ${hotStockSidebarCollapsed ? 'is-hot-collapsed' : ''}`.trim()}>
 					<HotStockSidebar data={hotRanks} state={hotRankState} error={hotRankError} activeSymbol={analysis?.symbol} collapsed={hotStockSidebarCollapsed} onToggle={toggleHotStockSidebar} onRefresh={() => void loadHotRanks(true)} onSelect={(symbol) => requestAnalysis(symbol)} />
 				<div className="stock-ai-main">
 					<StockResearchHistory items={research.history} activeID={research.selectedID} onOpen={(id) => { setAnalysis(null); setState('loading'); research.open(id); }} onRemove={(id) => { void research.remove(id).then((removed) => { if (removed && (analysis?.analysis_id === id || research.selectedID === id)) { setAnalysis(null); setState('idle'); setError(''); } }); }} />
-					<StockResearchProgress job={research.job} onCancel={() => void research.cancel()} />
+					<StockResearchProgress job={research.job} onCancel={() => void research.cancel()} onResume={() => void research.resume()} resuming={research.starting} />
 					{research.error && <div className="stock-ai-error" role="alert"><CircleAlert size={18} /><span>{research.error}</span></div>}
 					{history.length > 0 && <AnalysisHistory items={history} activeSymbol={analysis?.symbol} onSelect={selectHistory} onRemove={removeHistory} />}
 

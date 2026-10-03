@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const ResearchCompressionVersion = "evidence-pack-v2"
+const ResearchCompressionVersion = "evidence-pack-v5"
 
 type researchPromptPhase string
 
@@ -59,7 +59,7 @@ var researchSentencePattern = regexp.MustCompile(`[^。！？!?；;\n]+[。！�
 var researchNoiseKeys = map[string]bool{
 	"meta": true, "source": true, "provider": true, "url": true, "source_url": true,
 	"fetched_at": true, "latency_ms": true, "available_fields": true, "next_refresh_at": true,
-	"snapshot_id": true, "fallback_reason": true, "carry_forward": true,
+	"snapshot_id": true, "fallback_reason": true,
 }
 var researchRiskTerms = []string{"风险", "下滑", "下降", "亏损", "负", "减持", "诉讼", "问询", "否认", "澄清", "不确定", "现金流", "应收", "存货", "商誉", "减值", "流动性"}
 var researchFactTerms = []string{"营业总收入", "归母净利润", "扣非", "经营活动", "公告", "报告期", "合作", "订单", "客户", "项目", "投资", "回购", "中标", "产能", "产品", "业务"}
@@ -80,12 +80,29 @@ func buildResearchEvidencePack(snapshot ResearchSnapshot, request ResearchReques
 	if policy.MaxCards > 0 && policy.MaxEvidenceBytes > 0 && level != ResearchLevelDeep {
 		maxCards, maxChars = policy.MaxCards, policy.MaxEvidenceBytes
 	}
+	priorityIDs := researchRequestedSourceIDs(outline)
 	candidates := make([]researchEvidenceCandidate, 0, len(snapshot.Sources))
 	originalBytes := 0
 	for _, source := range snapshot.Sources {
 		originalBytes += len([]byte(source.Content))
 		source = researchSourceForLevel(source, snapshot, policy)
-		card := compressResearchSource(source, queries, phase, policy)
+		sourceQueries := queries
+		if outline != nil {
+			requestedQueries := []string{}
+			for _, question := range outline.Questions {
+				requested := question.SourceID == source.ID
+				for _, id := range question.EvidenceSourceIDs {
+					requested = requested || id == source.ID
+				}
+				if requested {
+					requestedQueries = append(requestedQueries, question.Query, question.Question)
+				}
+			}
+			if len(requestedQueries) > 0 {
+				sourceQueries = append(requestedQueries, snapshot.Name)
+			}
+		}
+		card := compressResearchSource(source, sourceQueries, phase, policy)
 		if strings.TrimSpace(card.Text) == "" {
 			continue
 		}
@@ -99,7 +116,7 @@ func buildResearchEvidencePack(snapshot ResearchSnapshot, request ResearchReques
 	})
 	collapseDuplicateResearchEvidence(candidates)
 
-	selected := selectResearchEvidence(candidates, maxCards, maxChars, policy.MaxAnnouncements, phase)
+	selected := selectResearchEvidence(candidates, maxCards, maxChars, policy.MaxAnnouncements, phase, priorityIDs)
 	selectedBytes := 0
 	for _, item := range selected {
 		selectedBytes += len([]byte(item.Text))
@@ -134,7 +151,7 @@ func buildResearchTradeEvidencePack(snapshot ResearchSnapshot, request ResearchR
 	full := buildResearchEvidencePack(snapshot, request, researchPromptSynthesis, &outline)
 	level, _ := normalizeResearchLevel(request.AnalysisLevel)
 	policy := researchLevelPolicyFor(level)
-	keep := map[string]bool{"m-price": true, "m-quote": true, "f-financial": true, "f-business": true}
+	keep := map[string]bool{"m-price": true, "m-sector": true, "m-quote": true, "f-financial": true, "f-business": true}
 	for _, claim := range append(append(append([]ResearchClaim{core.Thesis}, core.Support...), core.Counter...), core.Alternatives...) {
 		for _, id := range claim.SourceIDs {
 			keep[id] = true
@@ -218,7 +235,13 @@ func buildResearchCoreEvidencePack(snapshot ResearchSnapshot, request ResearchRe
 		}
 	}
 	for _, card := range full.Evidence {
-		if card.ID == "m-price" || card.ID == "m-quote" || card.ID == "f-financial" || card.ID == "f-business" || card.Kind == "disclosure" || card.Kind == "company_profile" {
+		if isResearchMustKeep(ResearchSource{ID: card.ID, Kind: card.Kind}) {
+			add(card)
+		}
+	}
+	priorityIDs := researchRequestedSourceIDs(&outline)
+	for _, card := range full.Evidence {
+		if priorityIDs[card.ID] {
 			add(card)
 		}
 	}
@@ -244,7 +267,10 @@ func compressResearchSource(source ResearchSource, queries []string, phase resea
 		date = source.PublishedAt.Format("2006-01-02")
 	}
 	exact := source.Kind != "calculation" && !strings.HasPrefix(source.ID, "f-")
-	compression := "原文连续片段；完整来源保存在快照"
+	compression := "原文摘录，省略处用…分隔；引文只能引用连续片段，较完整来源保存在快照"
+	if source.Kind == "announcement" && !ResearchSourceHasBody(source) {
+		compression = "仅公告标题，未取得正文；不能据此确认交易条款或业务细节"
+	}
 	if !exact {
 		compression = "结构化字段；不用于逐字引文，完整来源保存在快照"
 	}
@@ -284,7 +310,7 @@ func compactResearchContent(source ResearchSource, queries []string, phase resea
 			return string(encoded)
 		}
 	}
-	text := normalizeResearchText(source.Content)
+	text := strings.TrimSpace(source.Content)
 	if text == "" {
 		return truncateExactText(source.Title, 160)
 	}
@@ -342,50 +368,7 @@ func compactResearchContent(source ResearchSource, queries []string, phase resea
 }
 
 func compactResearchAnnouncement(text string, queries []string, limit int) string {
-	if limit <= 0 {
-		limit = 100
-	}
-	sentences := researchSentencePattern.FindAllString(text, -1)
-	if len(sentences) == 0 {
-		return truncateExactText(text, limit)
-	}
-	type scoredSentence struct {
-		text  string
-		score int
-		index int
-	}
-	ranked := make([]scoredSentence, 0, len(sentences))
-	for index, sentence := range sentences {
-		sentence = strings.TrimSpace(sentence)
-		if sentence == "" {
-			continue
-		}
-		ranked = append(ranked, scoredSentence{text: sentence, score: scoreResearchSentence(sentence, queries), index: index})
-	}
-	sort.SliceStable(ranked, func(i, j int) bool {
-		if ranked[i].score != ranked[j].score {
-			return ranked[i].score > ranked[j].score
-		}
-		return ranked[i].index < ranked[j].index
-	})
-	selected := make([]scoredSentence, 0, 2)
-	length := 0
-	for _, sentence := range ranked {
-		if length+len([]rune(sentence.text)) > limit && len(selected) > 0 {
-			continue
-		}
-		selected = append(selected, sentence)
-		length += len([]rune(sentence.text))
-		if length >= limit {
-			break
-		}
-	}
-	sort.SliceStable(selected, func(i, j int) bool { return selected[i].index < selected[j].index })
-	parts := make([]string, 0, len(selected))
-	for _, sentence := range selected {
-		parts = append(parts, sentence.text)
-	}
-	return truncateExactText(strings.Join(parts, ""), limit)
+	return ResearchSourceExcerpt(text, queries, limit)
 }
 
 func compactResearchJSON(value any, depth int, sourceID string, policy researchLevelPolicy) any {
@@ -425,7 +408,7 @@ func compactResearchJSON(value any, depth int, sourceID string, policy researchL
 	}
 }
 
-func selectResearchEvidence(candidates []researchEvidenceCandidate, maxCards, maxChars, maxAnnouncements int, phase researchPromptPhase) []researchEvidenceCard {
+func selectResearchEvidence(candidates []researchEvidenceCandidate, maxCards, maxChars, maxAnnouncements int, phase researchPromptPhase, priorityIDs map[string]bool) []researchEvidenceCard {
 	selected := make([]researchEvidenceCard, 0, maxCards)
 	used := map[string]bool{}
 	chars := 0
@@ -454,6 +437,11 @@ func selectResearchEvidence(candidates []researchEvidenceCandidate, maxCards, ma
 			add(candidate)
 		}
 	}
+	for _, candidate := range candidates {
+		if priorityIDs[candidate.source.ID] {
+			add(candidate)
+		}
+	}
 	if phase == researchPromptSynthesis {
 		for _, candidate := range candidates {
 			if containsAnyFold(candidate.card.Text, researchRiskTerms...) {
@@ -468,7 +456,7 @@ func selectResearchEvidence(candidates []researchEvidenceCandidate, maxCards, ma
 }
 
 func isResearchMustKeep(source ResearchSource) bool {
-	if source.ID == "f-financial" || source.ID == "f-business" || source.ID == "m-price" || source.ID == "m-quote" {
+	if source.ID == "f-financial" || source.ID == "f-business" || source.ID == "m-price" || source.ID == "m-sector" || source.ID == "m-quote" {
 		return true
 	}
 	return source.Kind == "disclosure" || source.Kind == "company_profile"

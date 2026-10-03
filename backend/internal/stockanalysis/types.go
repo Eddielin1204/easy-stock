@@ -22,11 +22,13 @@ type Input struct {
 	BusinessDetail     string
 	BusinessSource     string
 	Fundamentals       *foundation.StockFundamentals
+	FinancialHistory   []foundation.StockFundamentals
 	Reports            []foundation.MarketResearchItem
 	Announcements      []foundation.MarketResearchItem
 	ModelThemeEvidence []ThemeEvidence
 	CachedThemes       []foundation.StockThemeAttribution
 	Themes             []foundation.ThemeOverview
+	ResearchPeers      ResearchPeerGroup
 	MarketEmotion      *marketemotion.Snapshot
 	News               []foundation.NewsItem
 	CollectionGaps     []string

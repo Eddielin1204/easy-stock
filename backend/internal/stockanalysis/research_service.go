@@ -38,6 +38,24 @@ func NewResearchService(store *ResearchStore, run ResearchRunner) *ResearchServi
 }
 
 func (s *ResearchService) Start(ctx context.Context, request ResearchRequest) (ResearchJob, error) {
+	return s.start(ctx, request, nil)
+}
+
+func (s *ResearchService) Resume(ctx context.Context, id string) (ResearchJob, error) {
+	if s == nil || s.store == nil {
+		return ResearchJob{}, fmt.Errorf("研究任务服务不可用")
+	}
+	job, err := s.store.Get(ctx, id)
+	if err != nil {
+		return ResearchJob{}, err
+	}
+	if !job.Public().ResumeAvailable || job.Analysis == nil {
+		return ResearchJob{}, fmt.Errorf("该研究没有可继续的阶段，请重新分析")
+	}
+	return s.start(ctx, job.Request, &job)
+}
+
+func (s *ResearchService) start(ctx context.Context, request ResearchRequest, resume *ResearchJob) (ResearchJob, error) {
 	request, err := NormalizeResearchRequest(request)
 	if err != nil {
 		return ResearchJob{}, err
@@ -63,6 +81,11 @@ func (s *ResearchService) Start(ctx context.Context, request ResearchRequest) (R
 	}
 	now := time.Now().UTC()
 	job := ResearchJob{ID: NewResearchID(), Request: request, Status: "queued", Stage: "queued", Message: "研究已提交", StartedAt: now, UpdatedAt: now}
+	if resume != nil {
+		job.Analysis, job.Snapshot, job.Checkpoint = resume.Analysis, resume.Snapshot, resume.Checkpoint
+		job.ResumedFrom = resume.ID
+		job.Message = "继续已保存的研究阶段"
+	}
 	if err := s.store.Save(ctx, job); err != nil {
 		return job, err
 	}
@@ -83,6 +106,20 @@ func (s *ResearchService) execute(ctx context.Context, key string, job ResearchJ
 		}
 		s.mu.Unlock()
 	}()
+	execution := &researchExecution{checkpoint: job.Checkpoint}
+	if job.ResumedFrom != "" {
+		previous := job
+		execution.resume = &previous
+	}
+	execution.save = func(cp *ResearchCheckpoint) error {
+		job.Checkpoint = cp
+		job.UpdatedAt = time.Now().UTC()
+		// A cancellation must not discard the last completed model stage.
+		saveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return s.store.Save(saveCtx, job)
+	}
+	ctx = context.WithValue(ctx, researchExecutionKey{}, execution)
 	publish := func(stage, message string, analysis *Analysis, snapshot *ResearchSnapshot) error {
 		job.Stage = stage
 		job.Message = message

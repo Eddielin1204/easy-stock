@@ -753,10 +753,6 @@ a:focus-visible {
 	margin: 0 auto 14px;
 }
 
-.topbar-with-modes {
-	grid-template-columns: minmax(260px, 1fr) auto minmax(280px, 1fr);
-}
-
 .brand-block,
 .top-actions,
 .data-status,
@@ -5785,6 +5781,19 @@ a:focus-visible {
 	gap: 12px;
 	max-width: 1840px;
 	margin: 0 auto;
+}
+
+.stock-ai-mode-nav {
+	grid-column: auto;
+	grid-row: auto;
+	justify-self: center;
+	max-width: 100%;
+	overflow-x: auto;
+}
+
+.stock-ai-mode-nav button {
+	flex-shrink: 0;
+	white-space: nowrap;
 }
 
 .stock-ai-shell {

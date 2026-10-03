@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -33,6 +34,10 @@ type PromptOptions struct {
 	DisableTools     bool
 	Toolsets         []string
 	BrowserStatePath string
+	// Zero leaves timing to the caller. Only actual model output resets idle time.
+	FirstResponseTimeout time.Duration
+	IdleTimeout          time.Duration
+	OnProgress           func(PromptProgress)
 }
 
 type OptionsPrompter interface {

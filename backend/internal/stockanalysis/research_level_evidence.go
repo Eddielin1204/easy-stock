@@ -8,6 +8,24 @@ import (
 
 // Snapshots remain complete; only the model's view is reduced for its level.
 func researchSourceForLevel(source ResearchSource, snapshot ResearchSnapshot, policy researchLevelPolicy) ResearchSource {
+	if source.ID == "m-sector" {
+		return compactResearchMarketSource(source, policy)
+	}
+	if source.ID == "f-financial" && policy.DailyBars < 300 {
+		var value map[string]any
+		if json.Unmarshal([]byte(source.Content), &value) == nil {
+			if history, ok := value["history"].([]any); ok {
+				if policy.DailyBars == 60 {
+					delete(value, "history")
+					value["history_note"] = "快速研判仅展示最新一期累计披露，不能判断连续改善"
+				} else if len(history) > 4 {
+					value["history"] = history[:4]
+				}
+			}
+			encoded, _ := json.Marshal(value)
+			source.Content = string(encoded)
+		}
+	}
 	if source.ID == "f-business" {
 		limit := 1800
 		if policy.DailyBars == 100 {
@@ -51,10 +69,11 @@ func researchSourceForLevel(source ResearchSource, snapshot ResearchSnapshot, po
 		"summary": summary, "bar_columns": []string{"date_YYYYMMDD", "open", "high", "low", "close", "volume"},
 		"recent_bars": rows, "price_basis": original["price_basis"], "volume_unit": original["volume_unit"],
 		"missing_fields": original["missing_fields"], "intraday_caution": original["intraday_caution"],
+		"return_definition": original["return_definition"],
 	}
 	for {
 		encoded, _ = json.Marshal(value)
-		if len(encoded) <= policy.MaxEvidenceBytes*3/4 || len(rows) <= 5 {
+		if len(encoded) <= policy.MaxEvidenceBytes/4 || len(rows) <= 5 {
 			break
 		}
 		rows = rows[1:]

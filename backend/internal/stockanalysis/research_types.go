@@ -4,10 +4,11 @@ import (
 	"context"
 	"time"
 
+	"easy-stock/backend/internal/agent"
 	"easy-stock/backend/internal/foundation"
 )
 
-const ResearchPromptVersion = "stock-research-v2"
+const ResearchPromptVersion = "stock-research-v5"
 
 type ResearchRequest struct {
 	Symbol        string        `json:"symbol"`
@@ -19,16 +20,18 @@ type ResearchRequest struct {
 
 // Source text is evidence, not an instruction or a verified interpretation.
 type ResearchSource struct {
-	ID          string    `json:"id"`
-	Kind        string    `json:"kind"`
-	Title       string    `json:"title"`
-	Content     string    `json:"content"`
-	Provider    string    `json:"provider"`
-	URL         string    `json:"url,omitempty"`
-	PublishedAt time.Time `json:"published_at,omitempty"`
-	CapturedAt  time.Time `json:"captured_at"`
-	ReportDate  string    `json:"report_date,omitempty"`
-	TimeStatus  string    `json:"time_status"`
+	ID            string    `json:"id"`
+	ExternalID    string    `json:"external_id,omitempty"`
+	ContentStatus string    `json:"content_status,omitempty"`
+	Kind          string    `json:"kind"`
+	Title         string    `json:"title"`
+	Content       string    `json:"content"`
+	Provider      string    `json:"provider"`
+	URL           string    `json:"url,omitempty"`
+	PublishedAt   time.Time `json:"published_at,omitempty"`
+	CapturedAt    time.Time `json:"captured_at"`
+	ReportDate    string    `json:"report_date,omitempty"`
+	TimeStatus    string    `json:"time_status"`
 }
 
 type PriceAnchor struct {
@@ -62,13 +65,14 @@ type ResearchClaim struct {
 }
 
 type ResearchQuestion struct {
-	Question string `json:"question"`
-	Why      string `json:"why"`
-	Tool     string `json:"tool"`
-	Query    string `json:"query"`
-	SourceID string `json:"source_id,omitempty"`
-	Status   string `json:"status"`
-	Outcome  string `json:"outcome,omitempty"`
+	Question          string   `json:"question"`
+	Why               string   `json:"why"`
+	Tool              string   `json:"tool"`
+	Query             string   `json:"query"`
+	SourceID          string   `json:"source_id,omitempty"`
+	Status            string   `json:"status"`
+	Outcome           string   `json:"outcome,omitempty"`
+	EvidenceSourceIDs []string `json:"evidence_source_ids,omitempty"`
 }
 
 type ResearchOutline struct {
@@ -123,6 +127,7 @@ type ResearchSynthesis struct {
 	Alternatives     []ResearchClaim     `json:"alternatives"`
 	MainConflict     string              `json:"main_conflict"`
 	EvidenceLevel    string              `json:"evidence_level"`
+	EvidenceReasons  []string            `json:"evidence_reasons,omitempty"`
 	Limitations      []string            `json:"limitations"`
 	Conditions       []ResearchCondition `json:"conditions"`
 	InvalidationIDs  []string            `json:"invalidation_ids"`
@@ -156,11 +161,12 @@ type ResearchTradeConditions struct {
 }
 
 type ResearchAttempt struct {
-	Stage         string `json:"stage"`
-	DurationMS    int64  `json:"duration_ms"`
-	PromptBytes   int    `json:"prompt_bytes"`
-	ResponseBytes int    `json:"response_bytes"`
-	Error         string `json:"error,omitempty"`
+	Stage         string               `json:"stage"`
+	DurationMS    int64                `json:"duration_ms"`
+	PromptBytes   int                  `json:"prompt_bytes"`
+	ResponseBytes int                  `json:"response_bytes"`
+	Error         string               `json:"error,omitempty"`
+	Progress      agent.PromptProgress `json:"progress,omitempty"`
 }
 
 type ResearchPromptCompression struct {

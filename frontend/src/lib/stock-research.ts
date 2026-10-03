@@ -8,7 +8,7 @@ export type ResearchCondition = { id: string; text: string; metric: string; oper
 export type ResearchScenario = { key: string; name: string; description: string; condition_ids: string[]; response: string };
 export type ResearchReport = {
 	headline: string; thesis: ResearchClaim; support: ResearchClaim[]; counter: ResearchClaim[]; alternatives: ResearchClaim[];
-	main_conflict: string; evidence_level: string; limitations: string[]; conditions: ResearchCondition[]; invalidation_ids: string[];
+	main_conflict: string; evidence_level: string; evidence_reasons?: string[]; limitations: string[]; conditions: ResearchCondition[]; invalidation_ids: string[];
 	scenarios: ResearchScenario[];
 	decision: { status: string; mode: string; horizon: string; new_position: string; existing_position: string; reason: string; price_plan?: { entry_anchor: string; stop_anchor: string; target_anchor?: string; reason: string; source_ids: string[] } | null };
 	baseline_relation: string; baseline_reason: string; snapshot_id: string; snapshot_version: number; prompt_version: string;
@@ -21,11 +21,17 @@ export type ResearchReport = {
 	validation: string; validation_notes: string[];
 };
 export type ResearchVerification = { checked_at: string; baseline_at: string; source: string; summary: string; checks: Array<{ condition_id: string; status: string; observed?: number; as_of?: string; detail: string }> };
-export type ResearchJob = { id: string; request: ResearchRequest; status: string; stage: string; message: string; error?: string; started_at: string; updated_at: string; completed_at?: string; analysis?: StockAIAnalysis; verification?: ResearchVerification };
+export type ResearchJob = { id: string; request: ResearchRequest; status: string; stage: string; message: string; error?: string; started_at: string; updated_at: string; completed_at?: string; analysis?: StockAIAnalysis; verification?: ResearchVerification; resume_available?: boolean; resumed_from?: string };
 export type ResearchJobSummary = Pick<ResearchJob, 'id' | 'request' | 'status' | 'stage' | 'message' | 'started_at' | 'updated_at'> & { name: string; headline: string; score: number };
 
 export const isResearchRunning = (job?: Pick<ResearchJob, 'status'> | null) => !!job && (job.status === 'queued' || job.status === 'running');
 export const evidenceLevelLabel = (level: string) => ({ sufficient: '较充分', limited: '有限', insufficient: '不足' }[level] || '未评估');
+export function researchEvidenceReasons(report: ResearchReport) {
+	if (report.evidence_level === 'sufficient') return [];
+	if (report.evidence_reasons?.length) return report.evidence_reasons;
+	const reasons = report.questions.filter((question) => ['not_found', 'unavailable'].includes(question.status)).map((question) => question.question);
+	return [...new Set([...reasons, report.main_conflict].filter(Boolean))].slice(0, 4);
+}
 export const researchLevelLabel = (level?: ResearchAnalysisLevel) => ({ quantitative: '量化速览', quick: 'AI快速研判', standard: 'AI标准研判', deep: 'AI深度研究' }[level || 'deep'] || 'AI深度研究');
 export const conditionStatusLabel = (status: string) => ({ pending: '待观察', met: '已满足', not_met: '窗口结束未满足', not_yet: '尚未满足', unavailable: '数据不足', manual_review: '需人工核实' }[status] || '待观察');
 export function safeResearchURL(value?: string) {
@@ -42,6 +48,7 @@ export function researchPlanText(analysis: StockAIAnalysis) {
 		`${analysis.name}（${analysis.symbol}）研究报告`, `报告编号：${analysis.analysis_id || '--'}；快照：${report.snapshot_id} v${report.snapshot_version}`,
 		`分析时点：${report.cutoff_at}；研究周期：${report.request.horizon}`,
 		`判断：${report.thesis.text}`, `证据充分度：${evidenceLevelLabel(report.evidence_level)}`, `核心分歧：${report.main_conflict}`,
+		...researchEvidenceReasons(report).map((reason) => `证据评估依据：${reason}`),
 		...report.support.map((claim) => `支持：${claim.text} [${claim.source_ids.join(', ')}]`),
 		...report.counter.map((claim) => `反证：${claim.text} [${claim.source_ids.join(', ')}]`),
 		...report.alternatives.map((claim) => `替代解释：${claim.text} [${claim.source_ids.join(', ')}]`),

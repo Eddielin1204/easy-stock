@@ -115,13 +115,13 @@ func TestResearchAnnouncementSummaryIsBounded(t *testing.T) {
 	if len(pack.Evidence) != 1 {
 		t.Fatalf("expected one evidence card, got %d", len(pack.Evidence))
 	}
-	if got := len([]rune(pack.Evidence[0].Text)); got > 100 {
-		t.Fatalf("announcement summary length=%d, want <=100", got)
+	if got := len([]rune(pack.Evidence[0].Text)); got > 1500 {
+		t.Fatalf("announcement summary length=%d, want <=1500", got)
 	}
 }
 
 func TestResearchLevelEvidenceBudgets(t *testing.T) {
-	if ResearchCompressionVersion != "evidence-pack-v2" {
+	if ResearchCompressionVersion != "evidence-pack-v5" {
 		t.Fatalf("compression version = %q", ResearchCompressionVersion)
 	}
 	lines := syntheticTrendLines("600519.SH", 180, 10, .05, 1_000_000_000)
@@ -139,9 +139,9 @@ func TestResearchLevelEvidenceBudgets(t *testing.T) {
 		chars int
 		bytes int
 	}{
-		{ResearchLevelQuick, 60, 30, 4_000},
-		{ResearchLevelStandard, 100, 50, 8_000},
-		{ResearchLevelDeep, 300, 100, 16_000},
+		{ResearchLevelQuick, 60, 180, 4_000},
+		{ResearchLevelStandard, 100, 700, 12_000},
+		{ResearchLevelDeep, 300, 1500, 24_000},
 	} {
 		request := ResearchRequest{Purpose: "observe", Horizon: "swing", AnalysisLevel: tc.level}
 		pack := buildResearchCoreEvidencePack(snapshot, request, ResearchOutline{})
@@ -222,7 +222,7 @@ func TestResearchCoreEvidencePackStaysFocused(t *testing.T) {
 		snapshot.Sources = append(snapshot.Sources, NewResearchSource("announcement", fmt.Sprintf("公告%d", index), "公司业绩变化与经营风险需要继续核实。"+strings.Repeat("补充正文。", 40), "test", fmt.Sprintf("https://example.com/core-%d", index), snapshot.CutoffAt.Add(-time.Duration(index+1)*time.Hour), snapshot.CapturedAt))
 	}
 	pack := buildResearchCoreEvidencePack(snapshot, ResearchRequest{Purpose: "observe", Horizon: "swing"}, ResearchOutline{})
-	if len(pack.Evidence) > 12 || pack.Stats.SelectedContentBytes > 16000 {
+	if len(pack.Evidence) > 16 || pack.Stats.SelectedContentBytes > 24000 {
 		t.Fatalf("core evidence pack too large: cards=%d bytes=%d", len(pack.Evidence), pack.Stats.SelectedContentBytes)
 	}
 }

@@ -471,13 +471,20 @@ func summarizeDailyKLines(bars []AIDailyBar) aiDailyKLineSummary {
 			continue
 		}
 		key := fmt.Sprintf("%dd", window)
-		summary.WindowReturns[key] = round2(windowReturn(closes, window))
+		if len(valid) > window {
+			summary.WindowReturns[key] = round2(windowReturn(closes, window))
+		}
 		summary.AverageVolume[key] = round2(averageTail(volumes, window))
 		summary.AverageAmount[key] = round2(averageTail(amounts, window))
 		summary.AverageTurnover[key] = round2(averageTail(turnovers, window))
 		if len(returns) > 0 {
 			observations := min(window, len(returns))
 			summary.DailyVolatility[key] = round2(standardDeviation(returns[len(returns)-observations:]))
+		}
+	}
+	for _, window := range []int{1, 2, 3, 4} {
+		if len(valid) > window {
+			summary.WindowReturns[fmt.Sprintf("%dd", window)] = round2(windowReturn(closes, window))
 		}
 	}
 	if len(valid) >= 20 {
@@ -683,6 +690,7 @@ type promptJSONAttempt struct {
 	promptBytes   int
 	responseBytes int
 	err           string
+	progress      agent.PromptProgress
 }
 
 func promptJSONObject[T any](ctx context.Context, prompter agent.Prompter, prompt, label string) (T, error) {
@@ -704,6 +712,7 @@ func promptJSONObjectWithOptions[T any](ctx context.Context, prompter agent.Prom
 		diagnostic := promptJSONAttempt{
 			number: attempt, durationMS: time.Since(startedAt).Milliseconds(), promptBytes: len([]byte(attemptPrompt)),
 			responseBytes: len([]byte(result.Content)),
+			progress:      result.Progress,
 		}
 		if callErr != nil {
 			diagnostic.err = callErr.Error()
