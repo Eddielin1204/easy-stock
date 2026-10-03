@@ -6200,13 +6200,19 @@ a:focus-visible {
 	backdrop-filter: blur(4px);
 	z-index: 140;
 }
-.stock-ai-level-dialog { width: min(720px, calc(100vw - 32px)); overflow: hidden; border: 1px solid var(--theme-line, #c9d7e6); border-radius: 12px; background: var(--theme-surface, #fff); box-shadow: 0 24px 70px var(--theme-shadow, rgba(24, 42, 75, .28)); }
+.stock-ai-level-dialog { width: min(720px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; border: 1px solid var(--theme-line, #c9d7e6); border-radius: 12px; background: var(--theme-surface, #fff); box-shadow: 0 24px 70px var(--theme-shadow, rgba(24, 42, 75, .28)); }
 .stock-ai-level-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 19px 22px 15px; border-bottom: 1px solid var(--line-soft); background: var(--theme-surface-soft, #f8fbfe); }
 .stock-ai-level-dialog > header > div { display: grid; gap: 4px; }
 .stock-ai-level-dialog > header span { display: flex; align-items: center; gap: 6px; color: var(--theme-blue, #2476d2); font-size: 12px; font-weight: 750; letter-spacing: .08em; }
 .stock-ai-level-dialog h2 { margin: 0; color: var(--theme-text, #29415b); font-size: 20px; }
 .stock-ai-level-dialog > header p { margin: 0; color: var(--theme-muted, #728399); font-size: 14px; line-height: 1.5; }
 .stock-ai-level-dialog > header > button { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--theme-line, #d2deea); border-radius: 7px; background: var(--theme-surface, #fff); color: var(--theme-muted, #74879b); cursor: pointer; }
+.stock-ai-setup-steps { display:flex; gap:24px; margin:0; padding:15px 22px; border-bottom:1px solid var(--line-soft); list-style:none; }
+.stock-ai-setup-steps li { display:flex; align-items:center; gap:7px; color:var(--theme-muted, #728399); font-size:13px; }
+.stock-ai-setup-steps li > span { display:grid; place-items:center; width:23px; height:23px; border:1px solid var(--theme-line, #c9d7e6); border-radius:50%; font-size:12px; }
+.stock-ai-setup-steps li.active,.stock-ai-setup-steps li.complete { color:var(--theme-blue, #2476d2); }
+.stock-ai-setup-steps li.active { font-weight:650; }
+.stock-ai-setup-steps li.active > span { border-color:var(--theme-blue-line, #2476d2); background:var(--theme-blue-solid, #2476d2); color:var(--theme-on-emphasis, #fff); }
 .stock-ai-level-list { display: grid; gap: 8px; padding: 16px 22px 12px; }
 .stock-ai-level-list > button { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 11px; min-width: 0; padding: 12px; border: 1px solid var(--theme-line-soft, #dce6ef); border-radius: 8px; background: var(--theme-surface, #fff); color: var(--text); text-align: left; cursor: pointer; }
 .stock-ai-level-list > button:hover { border-color: var(--theme-blue-line, #9fc4e6); background: var(--theme-surface, #f8fbff); }
@@ -6684,6 +6690,7 @@ a:focus-visible {
 	.stock-ai-level-overlay { align-items: end; padding: 0; }
 	.stock-ai-level-dialog { width: 100%; max-height: 92vh; overflow: auto; border-radius: 12px 12px 0 0; }
 	.stock-ai-level-list { padding: 13px 14px 9px; }
+	.stock-ai-setup-steps { padding: 13px 14px; gap:20px; }
 	.stock-ai-level-list > button { grid-template-columns: 24px minmax(0, 1fr); }
 	.stock-ai-level-meta { grid-column: 2; display: flex; justify-content: flex-start; justify-items: start; min-width: 0; text-align: left; }
 	.stock-ai-level-note { margin: 0 14px 13px; }
