@@ -168,7 +168,11 @@ func BuildResearchSnapshot(input Input, analysis Analysis, cutoff time.Time) Res
 	}
 	terms := []string{analysis.Name, strings.Split(input.Symbol, ".")[0]}
 	for _, item := range filterNewsByTerms(input.News, terms)[:min(8, len(filterNewsByTerms(input.News, terms)))] {
-		AppendResearchSources(&snapshot, []ResearchSource{NewResearchSource("news", item.Title, item.Content, item.Meta.Source, item.URL, item.PublishedAt, snapshot.CapturedAt)})
+		source := NewResearchSource("news", item.Title, item.Content, item.Meta.Source, item.URL, item.PublishedAt, snapshot.CapturedAt)
+		if strings.HasPrefix(item.Meta.Source, "eastmoney:stock-news-search:") {
+			source.ContentStatus = "excerpt"
+		}
+		AppendResearchSources(&snapshot, []ResearchSource{source})
 	}
 	snapshot.Limitations = append(snapshot.Limitations, "新闻与公告为有限检索结果；未检索到不能推断不存在风险", "价格和事件同时出现不证明因果；模型记忆不是本次证据", "没有次日竞价、开盘或逐笔资金数据，不得描述为已经发生")
 	if len(snapshot.DailyBars) < 20 {

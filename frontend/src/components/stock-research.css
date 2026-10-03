@@ -127,3 +127,22 @@
 	.stock-research-condition { grid-template-columns: auto minmax(0, 1fr); gap: 8px; }
 	.stock-research-condition em { grid-column: 2; text-align: left; }
 }
+
+.stock-research-logic-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.stock-research-trading-logic { min-width: 0; color: var(--theme-text, #172033); font-size: 14px; line-height: 1.75; }
+.stock-research-trading-logic > header h4 { margin: 0; font-size: 15px; line-height: 1.5; }
+.stock-research-trading-logic .stock-research-evidence-badge { padding: 3px 7px; border: 1px solid var(--theme-amber-line, #ead7ad); border-radius: 5px; background: var(--theme-amber-soft, #fff8e8); color: var(--theme-amber, #93691d); font-size: 11px; }
+.stock-research-trading-logic .stock-research-evidence-badge.sufficient { border-color: var(--theme-green-line, #b9ded0); background: var(--theme-green-soft, #edf9f4); color: var(--theme-green, #14865f); }
+.stock-research-logic-columns > div { display: grid; align-content: start; gap: 10px; min-width: 0; }
+.stock-research-logic-columns h3 { margin: 0; color: var(--theme-muted, #6d8198); font-size: 13px; }
+.stock-research-logic-item { display: grid; gap: 10px; min-width: 0; padding: 14px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--theme-surface-soft, #f9fbfd); }
+.stock-research-logic-item > header { display: grid; gap: 8px; }
+.stock-research-logic-item h4 { margin: 0; font-size: 18px; overflow-wrap: anywhere; }
+.stock-research-logic-item > header > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.stock-research-market-badge { padding: 3px 7px; border: 1px solid var(--line-soft); border-radius: 5px; color: var(--theme-muted, #6d8198); font-size: 11px; }
+.stock-research-market-badge.supported { color: var(--theme-green, #21866a); }
+.stock-research-logic-market { display: grid; gap: 6px; font-size: 12px; }
+.stock-research-logic-context { padding-top: 14px; border-top: 1px solid var(--line-soft); }
+.stock-research-logic-gaps { margin: 0; color: var(--theme-muted, #6d8198); font-size: 12px; overflow-wrap: anywhere; }
+.stock-research-logic-gaps ul, ul.stock-research-logic-gaps { padding-left: 18px; }
+@media (max-width: 760px) { .stock-research-logic-columns { grid-template-columns: minmax(0, 1fr); } }

@@ -72,6 +72,7 @@ import { useStockResearch } from '../lib/use-stock-research';
 import { isResearchRunning, researchPlanText, type ResearchAnalysisLevel, type ResearchRequest } from '../lib/stock-research';
 import { StockResearchHistory, StockResearchProgress, StockResearchReportView } from './StockResearchReport';
 import { StockResearchSetupDialog, type ResearchSetupOptions } from './StockResearchSetupDialog';
+import { StockResearchTradingLogic } from './StockResearchTradingLogic';
 
 export type StockAIWorkspaceMode = 'analysis' | 'expectation' | 'risk';
 
@@ -449,6 +450,7 @@ export function StockAIAnalysisWorkspace({ config, refreshKey, mode, onModeChang
 								<AnalysisVerdict analysis={analysis} copied={copied} exporting={exporting} onRefresh={() => requestAnalysis(analysis.symbol)} onExport={() => void exportLongImage()} onCopy={() => void copyPlan()} onAskAI={() => onAskAI(analysis)} onOpenSettings={onOpenSettings} />
 									{analysis.research_report ? <>
 										{mode === 'analysis' && <details className="stock-research-quantitative" open><summary>量化基线与行情数据 · {analysis.scorecard.overall} 分</summary><FullAnalysisView analysis={analysis} /></details>}
+										{mode === 'analysis' && <StockResearchTradingLogic key={analysis.analysis_id || analysis.research_report.generated_at} report={analysis.research_report} />}
 										<StockResearchReportView analysis={analysis} view={mode === 'analysis' ? 'research' : mode} verification={research.job?.id === analysis.analysis_id ? research.job?.verification : undefined} verifying={research.verifying} onVerify={research.job?.id === analysis.analysis_id ? () => void research.verify() : undefined} />
 										{mode === 'risk' && analysis.research_report.decision.price_plan && <PositionCalculator analysis={analysis} />}
 									</> : analysis.analysis_id ? <section className="stock-research-band"><h3>当前仅有量化快照</h3><p>{analysis.ai?.message || 'AI研究尚未完成'}</p><details className="stock-research-quantitative" open><summary>查看历史量价与资料</summary><FullAnalysisView analysis={analysis} /></details></section> : <>
@@ -762,7 +764,7 @@ function FullAnalysisView({ analysis }: { analysis: StockAIAnalysis }) {
 				<KPICard icon={<Scale size={17} />} label="相对强度" value={analysis.relative_strength.available ? `${analysis.relative_strength.score}` : '--'} detail={analysis.relative_strength.available ? `${analysis.relative_strength.state} · ${analysis.relative_strength.benchmark_name}` : analysis.relative_strength.detail} tone="purple" />
 				<KPICard icon={<ShieldCheck size={17} />} label="风险压力" value={`${analysis.risk_control.score} · ${analysis.risk_control.level}`} detail={`仓位${analysis.risk_control.suggested_position_min_percent}%—${analysis.risk_control.suggested_position_max_percent}%`} tone="amber" />
 				<KPICard icon={<Zap size={17} />} label="短线状态" value={analysis.short_term.state} detail={isNewListing ? `上市 ${analysis.trend.history_days || analysis.chart.length} 日 · ${analysis.short_term.tradability}` : `近20日 ${analysis.short_term.limit_up_count_20d} 次涨停 · ${analysis.short_term.tradability}`} tone="amber" />
-				<KPICard icon={<Target size={17} />} label={theme.is_hot ? '热点定位' : '主业定位'} value={theme.primary || '独立结构'} detail={themeDetail} tone="purple" />
+				{analysis.research_report ? <KPICard icon={<Target size={17} />} label="主营背景" value={theme.business || '主业待补充'} detail={themeSource} tone="purple" /> : <KPICard icon={<Target size={17} />} label={theme.is_hot ? '规则热点定位' : '主营背景'} value={theme.primary || '独立结构'} detail={themeDetail} tone="purple" />}
 			</section>
 
 			<div className="stock-ai-analysis-grid">
@@ -770,7 +772,7 @@ function FullAnalysisView({ analysis }: { analysis: StockAIAnalysis }) {
 				<SignalMatrix analysis={analysis} />
 			</div>
 
-			<ThemeAttributionPanel analysis={analysis} />
+			{!analysis.research_report && <ThemeAttributionPanel analysis={analysis} />}
 
 			{!isShortTermDecision(analysis) && <div className="stock-ai-fundamental-grid">
 				<FundamentalPanel analysis={analysis} />

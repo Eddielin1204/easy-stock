@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"easy-stock/backend/internal/agent"
@@ -13,19 +14,28 @@ import (
 // Parsed intermediate JSON is private, unvalidated working state. It never
 // becomes an AI report until the complete synthesis passes validation.
 type ResearchCheckpoint struct {
-	PromptVersion      string                         `json:"prompt_version"`
-	CompressionVersion string                         `json:"compression_version"`
-	ModelIdentity      string                         `json:"model_identity"`
-	Request            ResearchRequest                `json:"request"`
-	SnapshotHash       string                         `json:"snapshot_hash"`
-	Outline            *ResearchOutline               `json:"outline,omitempty"`
-	Outputs            map[string]ResearchStageOutput `json:"outputs,omitempty"`
-	Attempts           []ResearchAttempt              `json:"attempts,omitempty"`
-	RepairUsed         bool                           `json:"repair_used,omitempty"`
+	PromptVersion      string                          `json:"prompt_version"`
+	CompressionVersion string                          `json:"compression_version"`
+	ModelIdentity      string                          `json:"model_identity"`
+	Request            ResearchRequest                 `json:"request"`
+	SnapshotHash       string                          `json:"snapshot_hash"`
+	Outline            *ResearchOutline                `json:"outline,omitempty"`
+	Outputs            map[string]ResearchStageOutput  `json:"outputs,omitempty"`
+	Failures           map[string]ResearchStageFailure `json:"failures,omitempty"`
+	Attempts           []ResearchAttempt               `json:"attempts,omitempty"`
+	RepairUsed         bool                            `json:"repair_used,omitempty"`
 }
 type ResearchStageOutput struct {
 	PromptHash string          `json:"prompt_hash"`
 	Value      json.RawMessage `json:"value"`
+}
+
+// Failed final output is private diagnostic data, never a successful stage or
+// an AI report. Reasoning and model credentials are not captured here.
+type ResearchStageFailure struct {
+	PromptHash string `json:"prompt_hash"`
+	Error      string `json:"error"`
+	Content    string `json:"content"`
 }
 type researchExecutionKey struct{}
 type researchExecution struct {
@@ -105,6 +115,15 @@ func promptResearchJSON[T any](ctx context.Context, prompter agent.Prompter, pro
 		}
 	}
 	decoded, err := promptJSONObjectWithOptions[T](ctx, prompter, prompt, label, options)
+	if cp != nil && err != nil {
+		var invalid *invalidJSONResponseError
+		if errors.As(err, &invalid) {
+			if cp.Failures == nil {
+				cp.Failures = map[string]ResearchStageFailure{}
+			}
+			cp.Failures[label] = ResearchStageFailure{PromptHash: researchHash(prompt), Error: invalid.cause.Error(), Content: invalid.content}
+		}
+	}
 	if cp != nil && err == nil {
 		value, marshalErr := json.Marshal(decoded)
 		if marshalErr != nil {
@@ -114,6 +133,7 @@ func promptResearchJSON[T any](ctx context.Context, prompter agent.Prompter, pro
 			cp.Outputs = map[string]ResearchStageOutput{}
 		}
 		cp.Outputs[label] = ResearchStageOutput{PromptHash: researchHash(prompt), Value: value}
+		delete(cp.Failures, label)
 	}
 	if saveErr := saveResearchCheckpoint(ctx, cp, snapshot); saveErr != nil {
 		return decoded, fmt.Errorf("保存研究阶段失败：%w", saveErr)
@@ -140,5 +160,6 @@ func cacheResearchValue(cp *ResearchCheckpoint, label, prompt string, value any)
 	encoded, err := json.Marshal(value)
 	if err == nil {
 		cp.Outputs[label] = ResearchStageOutput{PromptHash: researchHash(prompt), Value: encoded}
+		delete(cp.Failures, label)
 	}
 }

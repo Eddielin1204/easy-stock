@@ -340,6 +340,13 @@ func (s *Server) collectStockResearch(ctx context.Context, canonicalSymbol strin
 	if newsErr != nil {
 		gaps = append(gaps, "近期新闻不可用: "+newsErr.Error())
 	}
+	stockNews, stockNewsErr := s.collectStockResearchNews(ctx, normalized.Canonical, quote.Name, "", time.Now().UTC())
+	if stockNewsErr != nil {
+		gaps = append(gaps, "个股定向新闻检索不可用（未检索到不代表没有事件）: "+stockNewsErr.Error())
+	} else if s.stockNewsSearch != nil && len(stockNews) == 0 {
+		gaps = append(gaps, "个股定向检索未取得近60天可用报道，不代表没有近期事件")
+	}
+	news = append(stockNews, news...)
 	if benchmarkErr != nil {
 		gaps = append(gaps, "基准指数数据不可用: "+benchmarkErr.Error())
 	}

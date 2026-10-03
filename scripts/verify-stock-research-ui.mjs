@@ -21,6 +21,7 @@ page.on('pageerror', (error) => errors.push(error.message));
 const analysis = structuredClone(sample.job.analysis);
 const claim = { text: '界面测试样例：历史量价不是未来盈利的证明', kind: 'inference', source_ids: ['m-price'] };
 const report = {
+	trading_logic: { business: { ...claim, text: '界面测试样例：主营背景独立展示' }, mainlines: [{ name: '端侧AI（测试候选）', explanation: { ...claim, text: '界面测试样例：端侧产品增长预期仍待核实' }, evidence_level: 'limited', market_status: 'unverified', gaps: ['测试缺口：缺少细分同业同期数据'] }], secondary: [], catalysts: [claim], gaps: [] },
   headline: '界面测试样例：证据有限，暂不形成交易计划', thesis: claim, support: [claim], counter: [], alternatives: [claim],
   main_conflict: '趋势、经营变化与未来情景仍需分开核实', evidence_level: 'limited', limitations: ['此报告仅用于界面测试，不是真实模型研判'],
   conditions: [{ id: 'c1', text: '核实后续披露是否改变判断', metric: 'disclosure', operator: 'confirmed', window: 'next_disclosure', source_ids: ['f-financial'], status: 'pending' }], invalidation_ids: ['c1'],
@@ -66,9 +67,19 @@ try {
   await page.goto(base);
   await firstHistory().click(); await headline().waitFor();
   await firstHistory().click(); await headline().waitFor();
+	await page.getByRole('heading', { name: '端侧AI（测试候选）', exact: true }).waitFor();
+	await page.locator('.stock-research-trading-logic').getByText('盘面待验证', { exact: true }).waitFor();
+	assert.equal(await page.locator('.stock-ai-theme-attribution-panel').count(), 0);
+	await page.locator('.stock-research-trading-logic').screenshot({ path: path.join(output, 'trading-logic-overview.png') });
+	await page.locator('.stock-research-trading-logic .stock-research-claim button').first().click();
+	await page.locator('.stock-research-trading-logic details[open]').waitFor();
+	await page.locator('.stock-research-trading-logic details summary').click();
+	await page.locator('.stock-research-trading-logic .stock-research-claim button').first().click();
+	await page.locator('.stock-research-trading-logic details[open]').waitFor();
+	await page.locator('.stock-research-trading-logic').screenshot({ path: path.join(output, 'trading-logic.png') });
   await assertNoOverflow('desktop');
   await page.screenshot({ path: path.join(output, 'desktop.png'), fullPage: true });
-  await page.locator('.stock-research-claim button').first().click();
+  await page.locator('.stock-research-report .stock-research-claim button').first().click();
   await page.locator('.stock-research-evidence details[open]').waitFor();
   await assertNoOverflow('evidence');
   await page.screenshot({ path: path.join(output, 'evidence.png'), fullPage: false });
@@ -118,6 +129,6 @@ try {
   await page.locator('.stock-research-history article').first().locator('button').last().click();
   await page.waitForFunction(() => !localStorage.getItem('easy-stock.stock-research.selected.v1'));
   assert.deepEqual(errors, []);
-  await fs.writeFile(path.join(output, 'result.json'), JSON.stringify({ passed: true, fixture_only: true, workflows: ['history', 'same-id reopen', 'sources', 'verification', 'clipboard', 'image export', 'bound chat', 'navigation/reload', 'mobile', 'holding/cost', 'cancel/reload', 'delete'], errors }, null, 2));
-  console.log('12 UI workflows passed using an explicitly labeled fixture; no live-model accuracy claim.');
+  await fs.writeFile(path.join(output, 'result.json'), JSON.stringify({ passed: true, fixture_only: true, workflows: ['trading logic and inline sources', 'history', 'same-id reopen', 'sources', 'verification', 'clipboard', 'image export', 'bound chat', 'navigation/reload', 'mobile', 'holding/cost', 'cancel/reload', 'delete'], errors }, null, 2));
+  console.log('13 UI workflows passed using an explicitly labeled fixture; no live-model accuracy claim.');
 } finally { await browser.close(); }

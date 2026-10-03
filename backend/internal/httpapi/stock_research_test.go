@@ -66,6 +66,21 @@ func TestResearchSupplementSearchUsesBodiesAlreadyInSnapshot(t *testing.T) {
 	}
 }
 
+func TestResearchAnnouncementSearchDoesNotPrioritizeEveryListedCompanyNotice(t *testing.T) {
+	server := &Server{marketOverview: &researchBodyProvider{}}
+	makeSource := func(title, body string) stockanalysis.ResearchSource {
+		return stockanalysis.NewResearchSource("announcement", title, body, "fixture", "", time.Time{}, time.Now())
+	}
+	h := makeSource("H股备案", "公司H股发行尚需取得批准。")
+	ir := makeSource("投资者关系活动记录", "产品尚在客户验证，另介绍H股发行进展。")
+	unrelated := makeSource("股权激励", "上市公司拟发行限制性股票。")
+	snapshot := stockanalysis.ResearchSnapshot{Symbol: "688099.SH", Name: "晶晨股份", Sources: []stockanalysis.ResearchSource{h, ir, unrelated}}
+	items, err := server.supplementStockResearch(context.Background(), snapshot, stockanalysis.ResearchQuestion{Tool: "announcements", Query: "晶晨股份 H股 发行 上市 进展"})
+	if err != nil || len(items) != 2 || items[0].ID != h.ID || items[1].ID != ir.ID {
+		t.Fatalf("broad words matched an unrelated notice: %+v, err=%v", items, err)
+	}
+}
+
 type researchFinancialProvider struct {
 	stockAnalysisBusiness
 	history     []foundation.StockFundamentals

@@ -256,6 +256,15 @@ func (s *Server) supplementStockResearch(ctx context.Context, snapshot stockanal
 	var err error
 	kind := "announcement"
 	switch question.Tool {
+	case "news":
+		if s.stockNewsSearch == nil {
+			return nil, fmt.Errorf("个股定向新闻检索不可用")
+		}
+		news, loadErr := s.collectStockResearchNews(ctx, snapshot.Symbol, snapshot.Name, question.Query, snapshot.CutoffAt)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		return stockNewsResearchSources(news, time.Now().UTC()), nil
 	case "announcements":
 		if s.marketOverview == nil {
 			return nil, fmt.Errorf("公告查询不可用")
@@ -338,7 +347,7 @@ func (s *Server) supplementStockResearch(ctx context.Context, snapshot stockanal
 		result = append(result, stockanalysis.ResearchItemSource(item, kind, time.Now().UTC()))
 	}
 	if question.Tool == "announcements" {
-		terms := stockanalysis.ResearchQueryTerms(question.Query)
+		terms := researchAnnouncementQueryTerms(question.Query, snapshot)
 		for _, source := range snapshot.Sources {
 			if source.Kind != "announcement" {
 				continue
@@ -355,6 +364,26 @@ func (s *Server) supplementStockResearch(ctx context.Context, snapshot stockanal
 		return nil, err
 	}
 	return result, nil
+}
+
+func researchAnnouncementQueryTerms(query string, snapshot stockanalysis.ResearchSnapshot) []string {
+	terms := stockanalysis.ResearchQueryTerms(query)
+	specific, general := []string{}, []string{}
+	for _, term := range terms {
+		if term == snapshot.Name || term == snapshot.Symbol || term == strings.Split(snapshot.Symbol, ".")[0] {
+			continue
+		}
+		switch term {
+		case "公告", "进展", "发行", "上市", "公司", "股份", "消息", "最新":
+			general = append(general, term)
+		default:
+			specific = append(specific, term)
+		}
+	}
+	if len(specific) > 0 {
+		return specific
+	}
+	return general
 }
 
 func researchSearchQuery(query string) string {

@@ -29,6 +29,10 @@ type NewsProvider interface {
 	LatestNews(ctx context.Context, limit int) ([]foundation.NewsItem, error)
 }
 
+type StockNewsSearchProvider interface {
+	SearchStockNews(ctx context.Context, symbol, query string, limit int) ([]foundation.NewsItem, error)
+}
+
 type SectorMapProvider interface {
 	Build(ctx context.Context, themeID string) (foundation.SectorMap, error)
 }
@@ -116,6 +120,7 @@ type Config struct {
 	KLinePrimary         KLineProvider
 	KLineFallback        KLineProvider
 	News                 NewsProvider
+	StockNews            StockNewsSearchProvider
 	SectorMap            SectorMapProvider
 	ThemeOverview        ThemeOverviewProvider
 	ThemeRadarFallback   ThemeRadarFallback

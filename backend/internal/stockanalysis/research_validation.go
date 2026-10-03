@@ -66,6 +66,7 @@ func validateResearch(result *ResearchSynthesis, snapshot ResearchSnapshot) ([]s
 	if err := validateClaim(&result.Thesis); err != nil {
 		return notes, err
 	}
+	notes = append(notes, normalizeTradingLogic(result.TradingLogic, snapshot, validateClaim)...)
 	for _, claims := range []*[]ResearchClaim{&result.Support, &result.Counter, &result.Alternatives} {
 		if len(*claims) > 5 {
 			*claims = (*claims)[:5]
@@ -305,6 +306,22 @@ func repairResearchSourceIDs(result *ResearchSynthesis, sources map[string]Resea
 	}
 	repairClaim := func(claim *ResearchClaim) { repairIDs(&claim.SourceIDs) }
 	repairClaim(&result.Thesis)
+	if logic := result.TradingLogic; logic != nil {
+		if logic.Business != nil {
+			repairClaim(logic.Business)
+		}
+		for _, items := range [][]ResearchLogicItem{logic.Mainlines, logic.Secondary} {
+			for i := range items {
+				repairClaim(&items[i].Explanation)
+				if items[i].MarketEvidence != nil {
+					repairClaim(items[i].MarketEvidence)
+				}
+			}
+		}
+		for i := range logic.Catalysts {
+			repairClaim(&logic.Catalysts[i])
+		}
+	}
 	for index := range result.Support {
 		repairClaim(&result.Support[index])
 	}
@@ -436,6 +453,30 @@ func softenUnsupportedAttribution(result *ResearchSynthesis, sources map[string]
 				changed = true
 			}
 		}
+	}
+	if logic := result.TradingLogic; logic != nil {
+		claims := append([]ResearchClaim{}, logic.Catalysts...)
+		if logic.Business != nil {
+			if rewrite(&logic.Business.Text) {
+				logic.Business.Kind = "inference"
+				changed = true
+			}
+		}
+		for _, items := range [][]ResearchLogicItem{logic.Mainlines, logic.Secondary} {
+			for i := range items {
+				changed = rewrite(&items[i].Explanation.Text) || changed
+				if items[i].MarketEvidence != nil {
+					changed = rewrite(&items[i].MarketEvidence.Text) || changed
+				}
+			}
+		}
+		for i := range claims {
+			if rewrite(&claims[i].Text) {
+				claims[i].Kind = "inference"
+				changed = true
+			}
+		}
+		logic.Catalysts = claims
 	}
 	changed = rewrite(&result.Decision.NewPosition) || changed
 	changed = rewrite(&result.Decision.ExistingPosition) || changed

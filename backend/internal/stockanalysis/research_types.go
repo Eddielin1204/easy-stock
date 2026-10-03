@@ -8,7 +8,7 @@ import (
 	"easy-stock/backend/internal/foundation"
 )
 
-const ResearchPromptVersion = "stock-research-v5"
+const ResearchPromptVersion = "stock-research-v7"
 
 type ResearchRequest struct {
 	Symbol        string        `json:"symbol"`
@@ -62,6 +62,25 @@ type ResearchClaim struct {
 	Kind      string   `json:"kind"`
 	SourceIDs []string `json:"source_ids"`
 	Quote     string   `json:"quote,omitempty"`
+}
+
+type ResearchLogicItem struct {
+	Name           string         `json:"name"`
+	Explanation    ResearchClaim  `json:"explanation"`
+	EvidenceLevel  string         `json:"evidence_level"`
+	MarketStatus   string         `json:"market_status"`
+	MarketEvidence *ResearchClaim `json:"market_evidence,omitempty"`
+	Gaps           []string       `json:"gaps"`
+}
+
+// Trading logic is an evidence-based interpretation, independent of the
+// deterministic theme score and whether price resonance has been confirmed.
+type ResearchTradingLogic struct {
+	Business  *ResearchClaim      `json:"business,omitempty"`
+	Mainlines []ResearchLogicItem `json:"mainlines"`
+	Secondary []ResearchLogicItem `json:"secondary"`
+	Catalysts []ResearchClaim     `json:"catalysts"`
+	Gaps      []string            `json:"gaps"`
 }
 
 type ResearchQuestion struct {
@@ -120,37 +139,39 @@ type ResearchDecision struct {
 }
 
 type ResearchSynthesis struct {
-	Headline         string              `json:"headline"`
-	Thesis           ResearchClaim       `json:"thesis"`
-	Support          []ResearchClaim     `json:"support"`
-	Counter          []ResearchClaim     `json:"counter"`
-	Alternatives     []ResearchClaim     `json:"alternatives"`
-	MainConflict     string              `json:"main_conflict"`
-	EvidenceLevel    string              `json:"evidence_level"`
-	EvidenceReasons  []string            `json:"evidence_reasons,omitempty"`
-	Limitations      []string            `json:"limitations"`
-	Conditions       []ResearchCondition `json:"conditions"`
-	InvalidationIDs  []string            `json:"invalidation_ids"`
-	Scenarios        []ResearchScenario  `json:"scenarios"`
-	Decision         ResearchDecision    `json:"decision"`
-	BaselineRelation string              `json:"baseline_relation"`
-	BaselineReason   string              `json:"baseline_reason"`
+	TradingLogic     *ResearchTradingLogic `json:"trading_logic,omitempty"`
+	Headline         string                `json:"headline"`
+	Thesis           ResearchClaim         `json:"thesis"`
+	Support          []ResearchClaim       `json:"support"`
+	Counter          []ResearchClaim       `json:"counter"`
+	Alternatives     []ResearchClaim       `json:"alternatives"`
+	MainConflict     string                `json:"main_conflict"`
+	EvidenceLevel    string                `json:"evidence_level"`
+	EvidenceReasons  []string              `json:"evidence_reasons,omitempty"`
+	Limitations      []string              `json:"limitations"`
+	Conditions       []ResearchCondition   `json:"conditions"`
+	InvalidationIDs  []string              `json:"invalidation_ids"`
+	Scenarios        []ResearchScenario    `json:"scenarios"`
+	Decision         ResearchDecision      `json:"decision"`
+	BaselineRelation string                `json:"baseline_relation"`
+	BaselineReason   string                `json:"baseline_reason"`
 }
 
 // ResearchCoreSynthesis and ResearchTradeConditions are kept separate at the
 // model boundary so the model does not have to produce one large nested JSON
 // object. ResearchSynthesis remains the persisted, backward-compatible shape.
 type ResearchCoreSynthesis struct {
-	Headline         string          `json:"headline"`
-	Thesis           ResearchClaim   `json:"thesis"`
-	Support          []ResearchClaim `json:"support"`
-	Counter          []ResearchClaim `json:"counter"`
-	Alternatives     []ResearchClaim `json:"alternatives"`
-	MainConflict     string          `json:"main_conflict"`
-	EvidenceLevel    string          `json:"evidence_level"`
-	Limitations      []string        `json:"limitations"`
-	BaselineRelation string          `json:"baseline_relation"`
-	BaselineReason   string          `json:"baseline_reason"`
+	TradingLogic     *ResearchTradingLogic `json:"trading_logic,omitempty"`
+	Headline         string                `json:"headline"`
+	Thesis           ResearchClaim         `json:"thesis"`
+	Support          []ResearchClaim       `json:"support"`
+	Counter          []ResearchClaim       `json:"counter"`
+	Alternatives     []ResearchClaim       `json:"alternatives"`
+	MainConflict     string                `json:"main_conflict"`
+	EvidenceLevel    string                `json:"evidence_level"`
+	Limitations      []string              `json:"limitations"`
+	BaselineRelation string                `json:"baseline_relation"`
+	BaselineReason   string                `json:"baseline_reason"`
 }
 
 type ResearchTradeConditions struct {

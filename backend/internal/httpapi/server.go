@@ -42,6 +42,7 @@ type Server struct {
 	kLinePrimary          KLineProvider
 	kLineFallback         KLineProvider
 	newsProvider          NewsProvider
+	stockNewsSearch       StockNewsSearchProvider
 	sectorMap             SectorMapProvider
 	themeOverview         ThemeOverviewProvider
 	limitUpProvider       LimitUpProvider
@@ -105,6 +106,9 @@ func NewServer(config any) *Server {
 		cfg.KLineFallback = sinaClient
 	}
 	if cfg.News == nil {
+		if cfg.StockNews == nil {
+			cfg.StockNews = eastMoneyClient
+		}
 		cfg.News = clsClient
 	}
 	var kaipanlaService *duanxianxia.Service
@@ -287,6 +291,7 @@ func NewServer(config any) *Server {
 		kLinePrimary:          cfg.KLinePrimary,
 		kLineFallback:         cfg.KLineFallback,
 		newsProvider:          cfg.News,
+		stockNewsSearch:       cfg.StockNews,
 		sectorMap:             cfg.SectorMap,
 		themeOverview:         cfg.ThemeOverview,
 		limitUpProvider:       cfg.LimitUp,

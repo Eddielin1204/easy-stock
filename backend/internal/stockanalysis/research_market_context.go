@@ -423,7 +423,7 @@ func compactResearchMarketSource(source ResearchSource, policy researchLevelPoli
 			delete(peer, "source_url")
 		}
 	}
-	limit := policy.MaxEvidenceBytes / 4
+	limit := policy.MaxEvidenceBytes / 6
 	if limit == 0 {
 		limit = 6000
 	}
@@ -441,6 +441,7 @@ func compactResearchMarketSource(source ResearchSource, policy researchLevelPoli
 				if window, ok := item.(map[string]any); ok {
 					windows[key] = map[string]any{
 						"base_date": window["base_date"], "start_date": window["start_date"],
+						"end_date":    window["end_date"],
 						"sample_size": window["sample_size"], "rising_count": window["rising_count"],
 						"mean_percent":  window["equal_weight_mean_return_percent"],
 						"stock_percent": window["stock_return_percent"], "excess_pp": window["stock_excess_percentage_points"],
@@ -474,9 +475,30 @@ func compactResearchMarketSource(source ResearchSource, policy researchLevelPoli
 		value["displayed_peer_count"] = len(peers)
 		encoded, _ := json.Marshal(value)
 		if len(encoded) <= limit || len(peers) == 0 {
+			if len(encoded) > limit && policy.DailyBars != 60 {
+				// Keep event/5d/swing windows and their original dates and
+				// aggregates. Extra horizons must not crowd out company facts.
+				limitResearchMarketWindows(value)
+				encoded, _ = json.Marshal(value)
+			}
 			source.Content = string(encoded)
 			return source
 		}
 		peers = peers[:len(peers)-1]
 	}
+}
+
+func limitResearchMarketWindows(value map[string]any) {
+	focus := ""
+	if recent, ok := value["recent_move_window"].(map[string]any); ok {
+		focus, _ = recent["window"].(string)
+	}
+	if windows, ok := value["windows"].(map[string]any); ok {
+		for key := range windows {
+			if key != focus && key != "2d" && key != "5d" && key != "20d" {
+				delete(windows, key)
+			}
+		}
+	}
+	value["window_note"] = "只展示异动窗口及2/5/20日对照，未展示的窗口不是缺失或无共振"
 }

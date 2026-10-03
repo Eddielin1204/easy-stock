@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"easy-stock/backend/internal/agent"
+	"easy-stock/backend/internal/runtimelog"
 )
 
 type aiConclusion struct {
@@ -670,8 +671,9 @@ type promptJSONObjectOptions struct {
 }
 
 type invalidJSONResponseError struct {
-	label string
-	cause error
+	label   string
+	cause   error
+	content string
 }
 
 func (e *invalidJSONResponseError) Error() string {
@@ -742,7 +744,7 @@ func promptJSONObjectWithOptions[T any](ctx context.Context, prompter agent.Prom
 		}
 		if attempt >= options.maxAttempts {
 			if options.maxAttempts == 1 {
-				return decoded, &invalidJSONResponseError{label: label, cause: decodeErr}
+				return decoded, &invalidJSONResponseError{label: label, cause: decodeErr, content: runtimelog.Redact(truncateExactText(result.Content, 8_000))}
 			}
 			return decoded, fmt.Errorf("Hermes未返回有效%sJSON: 首次%v；自动纠错后%w", label, firstDecodeErr, decodeErr)
 		}
@@ -768,6 +770,7 @@ func decodeJSONObject(content string, target any) error {
 		content = strings.TrimSpace(encoded)
 	}
 	var lastErr error
+	var fieldErr error
 	for start := strings.IndexByte(content, '{'); start >= 0; {
 		end := balancedJSONObjectEnd(content, start)
 		if end > start {
@@ -778,6 +781,9 @@ func decodeJSONObject(content string, target any) error {
 				return nil
 			} else {
 				lastErr = err
+				if fieldErr == nil {
+					fieldErr = err
+				}
 			}
 		}
 		next := strings.IndexByte(content[start+1:], '{')
@@ -785,6 +791,11 @@ func decodeJSONObject(content string, target any) error {
 			break
 		}
 		start += next + 1
+	}
+	// A later nested object without the expected top-level fields must not
+	// hide the actual type error in the model's main response object.
+	if fieldErr != nil {
+		return fieldErr
 	}
 	if lastErr != nil {
 		return lastErr

@@ -106,3 +106,5 @@ function ResearchEvidence({ report, selectedID }: { report: ResearchReport; sele
 }
 
 function formatDate(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) || date.getFullYear() < 2000 ? '时间未知' : date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); }
+
+export { ResearchPanel, Claim as ResearchClaimView };
