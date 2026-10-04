@@ -339,7 +339,8 @@ a:focus-visible {
 }
 
 .sidebar-brand {
-	display: flex;
+	display: grid;
+	grid-template-columns: 36px minmax(0, 1fr);
 	align-items: center;
 	gap: 10px;
 	min-height: 48px;
@@ -360,7 +361,7 @@ a:focus-visible {
 }
 .sidebar-logo img { display: block; width: 36px; height: 36px; border-radius: 10px; }
 
-.sidebar-brand > div:last-child {
+.sidebar-brand-name {
 	display: grid;
 	gap: 2px;
 	white-space: nowrap;
@@ -376,6 +377,27 @@ a:focus-visible {
 	font-size: 11px;
 	letter-spacing: 0.18em;
 }
+
+.sidebar-update-notice {
+	grid-column: 1 / -1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	min-width: 0;
+	min-height: 26px;
+	padding: 3px 7px;
+	border: 1px solid var(--theme-blue-line, #cfe0f1);
+	border-radius: 6px;
+	background: var(--theme-blue-soft, #edf5ff);
+	color: var(--theme-blue, #175ea9);
+	cursor: pointer;
+}
+.sidebar-update-notice:hover { border-color: var(--theme-blue, #2476d2); }
+.sidebar-update-notice svg { flex-shrink: 0; }
+.sidebar-update-notice span { overflow: hidden; color: inherit; font-size: 12px; font-weight: 600; letter-spacing: 0; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-collapsed .sidebar-brand { grid-template-columns: 36px; justify-content: center; padding-inline: 0; }
+.sidebar-collapsed .sidebar-update-notice span { display: none; }
 
 .app-sidebar nav {
 	display: grid;
@@ -2580,11 +2602,13 @@ a:focus-visible {
 	}
 
 	.sidebar-brand {
+		grid-template-columns: 36px;
 		justify-content: center;
 		padding-inline: 0;
 	}
 
-	.sidebar-brand > div:last-child,
+	.sidebar-brand-name,
+	.sidebar-update-notice span,
 	.app-sidebar nav button span,
 	.sidebar-guidance,
 	.sidebar-settings span,
