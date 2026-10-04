@@ -25,15 +25,6 @@
 }
 
 /* Portfolio AI inspection */
-.portfolio-inspection-workspace {
-	display: grid;
-	grid-template-columns: 220px minmax(0, 1fr);
-	gap: 16px;
-	min-height: 0;
-	padding: 16px 18px 24px;
-	background: var(--theme-surface-soft, #f3f6f8);
-}
-
 .portfolio-history {
 	align-self: start;
 	overflow: hidden;
@@ -213,8 +204,7 @@
 .portfolio-builder-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 18px; border-top: 1px solid var(--theme-line-soft, #dce3e8); background: var(--theme-surface-soft, #f7f9fa); }
 .portfolio-builder-footer > div { display: flex; align-items: center; gap: 12px; color: var(--theme-muted, #617380); font-size: 13px; }
 .portfolio-builder-footer > div strong { color: var(--theme-green, #25724f); }
-.portfolio-builder-footer > button,
-.portfolio-report-header > button {
+.portfolio-builder-footer > button {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -252,111 +242,22 @@
 .portfolio-progress-bar i { display: block; height: 100%; border-radius: inherit; background: var(--theme-blue-solid, #3486ad); transition: width .25s ease; }
 .portfolio-progress-bar small { position: absolute; top: -17px; right: 0; color: var(--theme-muted, #6c7d89); font-size: 11px; }
 
-.portfolio-report { display: grid; gap: 16px; min-width: 0; container: portfolio-report / inline-size; }
-.portfolio-report-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 16px 2px 12px; border-bottom: 1px solid var(--theme-line, #dce2e6); }
-.portfolio-report-header > div { display: grid; gap: 5px; }
-.portfolio-report-header span { display: flex; align-items: center; gap: 6px; color: var(--theme-blue, #2b769c); font-size: 12px; font-weight: 700; }
-.portfolio-report-header h2 { margin: 0; color: var(--theme-text, #1f3443); font-size: 21px; letter-spacing: 0; }
-.portfolio-report-header p { margin: 0; color: var(--theme-muted, #83909a); font-size: 13px; line-height: 1.6; }
-.portfolio-report-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--theme-line, #d9e1e6); border-radius: 6px; background: var(--theme-surface, #fff); }
-.portfolio-report-overview > div { display: grid; gap: 5px; min-height: 92px; padding: 14px; border-right: 1px solid var(--theme-line-soft, #e4e9ec); }
-.portfolio-report-overview > div:last-child { border-right: 0; }
-.portfolio-report-overview span { color: var(--theme-muted, #7d8b96); font-size: 13px; }
-.portfolio-report-overview strong { color: var(--theme-text, #263e4e); font-size: 20px; }
-.portfolio-report-overview small { color: var(--theme-subtle, #8a98a2); font-size: 12px; line-height: 1.6; }
-.portfolio-health-score { background: var(--theme-surface-soft, #edf7f2); }
-.portfolio-health-score strong { color: var(--theme-green, #25704e); font-size: 29px; }
-
-.portfolio-executive { padding: 16px 18px; border-left: 4px solid var(--theme-blue-line, #2c769b); background: var(--theme-surface, #fff); }
-.portfolio-executive h3 { margin: 0 0 7px; color: var(--theme-text, #203747); font-size: 12px; }
-.portfolio-executive p { margin: 0; color: var(--theme-muted, #526675); font-size: 15px; line-height: 1.8; overflow-wrap: anywhere; }
-.portfolio-report-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.portfolio-report-grid > section,
-.portfolio-limitations { padding: 14px 16px; border: 1px solid var(--theme-line, #dce3e7); border-radius: 6px; background: var(--theme-surface, #fff); }
-.portfolio-report-grid > section > header { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; color: var(--theme-blue, #31566d); }
-.portfolio-report-grid strong,
-.portfolio-limitations > strong { font-size: 12px; }
-.portfolio-report-grid ul,
-.portfolio-report-grid ol,
-.portfolio-limitations ul { display: grid; gap: 8px; margin: 0; padding-left: 22px; color: var(--theme-muted, #586c7a); font-size: 15px; line-height: 1.8; overflow-wrap: anywhere; }
-.portfolio-list-empty { margin: 0; color: var(--theme-subtle, #8b98a2); font-size: 14px; line-height: 1.75; }
-
-.portfolio-holding-report { border-top: 1px solid var(--theme-line, #dce2e6); border-bottom: 1px solid var(--theme-line, #dce2e6); padding: 14px 0; }
-.portfolio-holding-report > header { display: flex; align-items: baseline; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
-.portfolio-holding-report > header strong { color: var(--theme-text, #263c4c); font-size: 12px; }
-.portfolio-holding-report > header small { color: var(--theme-subtle, #8996a0); font-size: 12px; }
-.portfolio-holding-report > div { display: grid; gap: 12px; }
-.portfolio-holding-report article { min-width: 0; padding: 16px 18px; border: 1px solid var(--theme-line, #dce3e7); border-radius: 6px; background: var(--theme-surface, #fff); }
-.portfolio-holding-report article > header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 10px; }
-.portfolio-holding-report article > header > div { display: grid; min-width: 0; gap: 4px; overflow-wrap: anywhere; }
-.portfolio-holding-report article > header strong { color: var(--theme-text, #243a4a); font-size: 12px; }
-.portfolio-holding-report article > header span { color: var(--theme-muted, #82909a); font-size: 12px; }
-.portfolio-holding-report article > header em { padding: 3px 6px; border-radius: 3px; font-size: 12px; font-style: normal; font-weight: 700; }
-.portfolio-holding-report article > header em.danger { background: var(--theme-red-soft, #f9e8e3); color: var(--theme-red, #a34832); }
-.portfolio-holding-report article > header em.positive { background: var(--theme-surface-soft, #e8f5ee); color: var(--theme-green, #25704e); }
-.portfolio-holding-report article > header em.neutral { background: var(--theme-surface-soft, #edf1f3); color: var(--theme-muted, #667884); }
-.portfolio-holding-report article > header b { color: var(--theme-amber, #87643a); font-size: 12px; }
-.portfolio-open-stock { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 32px; padding: 6px 10px; border: 1px solid var(--theme-line, #b8ccd7); border-radius: 4px; background: var(--theme-surface-soft, #f6fafc); color: var(--theme-blue, #315f77); font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; }
-.portfolio-open-stock:hover { border-color: var(--theme-line, #709bb0); background: var(--theme-surface-soft, #edf6f9); color: var(--theme-blue, #214f67); }
-.portfolio-holding-report article > p { margin: 12px 0; color: var(--theme-muted, #536876); font-size: 15px; line-height: 1.8; overflow-wrap: anywhere; }
-.portfolio-holding-report article > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.portfolio-holding-report article > div span { min-width: 0; padding: 11px 12px; background: var(--theme-surface-soft, #f5f7f8); color: var(--theme-muted, #647784); font-size: 14px; line-height: 1.75; overflow-wrap: anywhere; }
-.portfolio-holding-report article > div b { display: block; margin-bottom: 3px; color: var(--theme-blue, #31586e); }
-
-.portfolio-scenarios { border-top: 1px solid var(--theme-line, #dce2e6); padding-top: 13px; }
-.portfolio-scenarios > header { margin-bottom: 9px; color: var(--theme-text, #263d4d); font-size: 12px; }
-.portfolio-scenarios > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
-.portfolio-scenarios article { display: grid; gap: 6px; padding: 12px; border: 1px solid var(--theme-line, #dce3e7); border-radius: 6px; background: var(--theme-surface, #fff); }
-.portfolio-scenarios strong { color: var(--theme-blue, #2b5970); font-size: 13px; }
-.portfolio-scenarios span { color: var(--theme-muted, #80909b); font-size: 14px; line-height: 1.75; overflow-wrap: anywhere; }
-.portfolio-scenarios p { margin: 0; color: var(--theme-muted, #576b78); font-size: 15px; line-height: 1.8; overflow-wrap: anywhere; }
-.portfolio-limitations { color: var(--theme-muted, #705f54); }
-.portfolio-limitations > strong { display: block; margin-bottom: 8px; }
-.portfolio-report > footer { padding: 10px 0; color: var(--theme-muted, #87949d); font-size: 12px; line-height: 1.6; text-align: center; }
-
-/* Adapt to the report width, including when the history rail is visible. */
-@container portfolio-report (max-width: 640px) {
-	.portfolio-report-grid,
-	.portfolio-scenarios > div,
-	.portfolio-holding-report article > div { grid-template-columns: 1fr; }
-	.portfolio-report-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-	.portfolio-report-overview > div { border-bottom: 1px solid var(--line-soft); }
-	.portfolio-report-overview > div:nth-child(2n) { border-right: 0; }
-	.portfolio-report-overview > div:nth-last-child(-n+2) { border-bottom: 0; }
-	.portfolio-holding-report article > header { grid-template-columns: minmax(0, 1fr) auto; }
-	.portfolio-holding-report article > header em,
-	.portfolio-open-stock { justify-self: end; }
-}
-
 @media (max-width: 1080px) {
-	.portfolio-inspection-workspace { grid-template-columns: 1fr; }
 	.portfolio-history > div { grid-template-columns: repeat(3, minmax(0, 1fr)); max-height: 130px; }
 	.portfolio-history > div > button { border-right: 1px solid var(--theme-line-soft, #edf0f2); }
 	.portfolio-holding-list article { grid-template-columns: minmax(140px, .8fr) minmax(190px, 1.2fr) 100px 30px; }
 }
 
 @media (max-width: 760px) {
-	.portfolio-inspection-workspace { padding: 10px; }
 	.portfolio-history > div { grid-template-columns: 1fr; }
-	.portfolio-profile-options,
-	.portfolio-report-overview,
-	.portfolio-report-grid,
-	.portfolio-scenarios > div { grid-template-columns: 1fr; }
-	.portfolio-report-overview > div { min-height: 72px; border-right: 0; border-bottom: 1px solid var(--theme-line-soft, #e4e9ec); }
-	.portfolio-report-overview > div:last-child { border-bottom: 0; }
+	.portfolio-profile-options { grid-template-columns: 1fr; }
 	.portfolio-holding-list article { grid-template-columns: minmax(0, 1fr) 32px; }
 	.portfolio-weight-control,
 	.portfolio-cost-input { grid-column: 1 / -1; }
 	.portfolio-remove { grid-column: 2; grid-row: 1; }
-	.portfolio-builder-footer,
-	.portfolio-report-header { align-items: stretch; flex-direction: column; }
+	.portfolio-builder-footer { align-items: stretch; flex-direction: column; }
 	.portfolio-progress { grid-template-columns: 40px minmax(0, 1fr); }
 	.portfolio-progress > small { grid-column: 2; }
-	.portfolio-holding-report article > header,
-	.portfolio-holding-report article > div { grid-template-columns: 1fr; }
-	.portfolio-holding-report article > header em,
-	.portfolio-holding-report article > header b,
-	.portfolio-open-stock { justify-self: start; }
 }
 
 * {
