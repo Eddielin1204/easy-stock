@@ -363,6 +363,7 @@ func NewServer(config any) *Server {
 	)
 	s.stockResearch = stockanalysis.NewResearchService(cfg.StockResearchStore, s.runStockResearch)
 	s.portfolioInspection = portfolioinspection.NewService(cfg.PortfolioStore, usageGateway, s.analyzeStock, cfg.Logger, s.analyzeHoldingResearch)
+	s.portfolioInspection.ConfigureResearch(s.resolvePortfolioResearch, s.refreshPortfolioQuotes)
 	s.portfolioExpectation = portfolioinspection.NewExpectationService(cfg.PortfolioStore, cfg.ReviewStore, usageGateway, s.analyzeStock, cfg.Logger, s.analyzeHoldingResearch)
 	s.routes()
 	return s
@@ -389,6 +390,9 @@ func (s *Server) Close() error {
 		s.emotionProgress.close()
 	}
 	var closeErrors []error
+	if s.portfolioInspection != nil {
+		s.portfolioInspection.Close()
+	}
 	if s.stockResearch != nil {
 		s.stockResearch.Close()
 	}
@@ -539,6 +543,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/portfolio-inspections", s.portfolioInspectionList)
 	s.mux.HandleFunc("POST /api/v1/portfolio-inspections", s.portfolioInspectionCreate)
 	s.mux.HandleFunc("GET /api/v1/portfolio-inspections/{id}", s.portfolioInspectionGet)
+	s.mux.HandleFunc("POST /api/v1/portfolio-inspections/{id}/resume", s.portfolioInspectionResume)
+	s.mux.HandleFunc("POST /api/v1/portfolio-inspections/{id}/cancel", s.portfolioInspectionCancel)
 	s.mux.HandleFunc("POST /api/v1/reviews/portfolio-expectations", s.portfolioExpectationCreate)
 	s.mux.HandleFunc("GET /api/v1/reviews/portfolio-expectations/latest", s.portfolioExpectationLatest)
 	s.mux.HandleFunc("GET /api/v1/reviews/portfolio-expectations/{id}", s.portfolioExpectationGet)

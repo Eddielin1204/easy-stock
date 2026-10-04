@@ -51,7 +51,7 @@ printf '%s\n' '{"method":"message.complete","params":{"content":"{\"ok\":true}"}
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	result, err := r.PromptWithOptions(ctx, "test", PromptOptions{FirstResponseTimeout: time.Second, IdleTimeout: 300 * time.Millisecond})
+	result, err := r.PromptWithOptions(ctx, "test", PromptOptions{Sandbox: true, FirstResponseTimeout: time.Second, IdleTimeout: 300 * time.Millisecond})
 	if err != nil || result.Content != `{"ok":true}` || result.Progress.ReasoningBytes != 64 || result.Progress.ElapsedMS < 300 {
 		t.Fatalf("active generation interrupted or metrics lost: %+v %v", result, err)
 	}
@@ -96,9 +96,25 @@ done
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	result, err := r.PromptWithOptions(ctx, "test", PromptOptions{FirstResponseTimeout: 2 * time.Second, IdleTimeout: 2 * time.Second})
+	result, err := r.PromptWithOptions(ctx, "test", PromptOptions{Sandbox: true, FirstResponseTimeout: 2 * time.Second, IdleTimeout: 2 * time.Second})
 	var timeout *PromptTimeoutError
 	if !errors.Is(err, context.DeadlineExceeded) || errors.As(err, &timeout) || result.Progress.ReasoningBytes == 0 {
 		t.Fatalf("total deadline lost: %+v %v", result, err)
+	}
+}
+
+func TestPromptProgressStopsRepeatedRuntimeRetriesAndPreservesDraft(t *testing.T) {
+	r := progressFixture(t, `printf '%s\n' '{"method":"message.delta","params":{"text":"draft"}}'
+printf '%s\n' '{"method":"status.update","params":{"kind":"retry","text":"retry 1"}}'
+printf '%s\n' '{"method":"reasoning.delta","params":{"text":"thinking"}}'
+printf '%s\n' '{"method":"status.update","params":{"kind":"retry","text":"retry 2"}}'
+printf '%s\n' '{"method":"message.complete","params":{"content":"must not succeed"}}'
+`)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	result, err := r.PromptWithOptions(ctx, "test", PromptOptions{Sandbox: true, FirstResponseTimeout: time.Second, IdleTimeout: time.Second, MaxAttempts: 2})
+	var limit *PromptRetryLimitError
+	if !errors.As(err, &limit) || result.Content != "draft" || result.Progress.RetryCount != 2 || limit.Progress.ReasoningBytes == 0 {
+		t.Fatalf("retry loop escaped its limit or draft was lost: %+v %v", result, err)
 	}
 }

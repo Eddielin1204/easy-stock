@@ -10,7 +10,7 @@ const policies = {
   quantitative: { calls: 0, timeout: 120_000 },
   quick: { calls: 1, timeout: 180_000, bytes: 4_000 },
   standard: { calls: 2, timeout: 360_000, bytes: 8_000 },
-  deep: { calls: 3, timeout: 1_080_000 },
+  deep: { calls: 3, timeout: 1_440_000 },
 };
 const headers = { 'Content-Type': 'application/json', ...(process.env.A_STOCK_TOKEN ? { Authorization: `Bearer ${process.env.A_STOCK_TOKEN}` } : {}) };
 async function request(route, options = {}) {

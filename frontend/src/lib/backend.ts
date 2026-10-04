@@ -1046,12 +1046,35 @@ export type PortfolioProfileRules = {
 	preferred_short_term_max_percent: number;
 };
 
+export type PortfolioResearchRequest = {
+ trader_profile: PortfolioTraderProfile;
+ holdings: PortfolioHolding[];
+ horizon?: 'short' | 'swing' | 'medium';
+ research_level?: 'standard' | 'deep';
+ force_symbols?: string[];
+};
+export type PortfolioFact = { value: unknown; available: boolean; method: string; as_of?: string; limitation?: string };
+export type PortfolioEvidenceRef = { report_id?: string; source_id?: string; fact?: string };
+export type PortfolioScoreDimension = {
+ key: string; label: string; score: number; weight: number; reason: string;
+ adjustments: Array<{ risk_id: string; reason: string; points: number }>;
+ evidence_refs: PortfolioEvidenceRef[]; limitations: string[];
+};
 export type PortfolioHoldingResult = {
 	holding: PortfolioHolding;
 	status: 'queued' | 'running' | 'succeeded' | 'failed' | string;
-	error?: string;
-	completed_at?: string;
-	analysis?: StockAIAnalysis;
+ error?: string;
+ completed_at?: string;
+ analysis?: StockAIAnalysis;
+ analysis_id?: string;
+ research_origin?: 'reused' | 'new' | 'shared_running';
+ report_completed_at?: string;
+ research_cutoff_at?: string;
+ research_started_at?: string;
+ research_duration_ms?: number;
+ current_quote?: Quote;
+ quote_status?: string;
+ quote_message?: string;
 };
 
 export type PortfolioMetrics = {
@@ -1081,6 +1104,14 @@ export type PortfolioMetrics = {
 };
 
 export type PortfolioAIReport = {
+ explanation_details?: Record<string, { evidence_refs?: PortfolioEvidenceRef[]; symbols?: string[] }>;
+ total_score?: number;
+ score_available?: boolean;
+ dimensions?: PortfolioScoreDimension[];
+ confidence_level?: string;
+ confidence_reason?: string;
+ risk_reason?: string;
+ risk_groups?: Array<{ name: string; symbols: string[]; weight_percent: number; reason: string; evidence_refs: PortfolioEvidenceRef[] }>;
 	health_score: number;
 	risk_level: string;
 	style_match: string;
@@ -1106,6 +1137,9 @@ export type PortfolioAIReport = {
 };
 
 export type PortfolioInspectionReport = {
+ request?: PortfolioResearchRequest;
+ facts?: Record<string, PortfolioFact>;
+ model?: string;
 	id: string;
 	prompt_version: string;
 	algorithm_version?: string;
@@ -1117,10 +1151,17 @@ export type PortfolioInspectionReport = {
 };
 
 export type PortfolioInspectionJob = {
+ resumed_from?: string;
+ resume_available?: boolean;
+ reused_stocks?: number;
+ new_stocks?: number;
+ shared_stocks?: number;
+ aggregation_started_at?: string;
+ aggregation_duration_ms?: number;
 	id: string;
 	status: 'running' | 'succeeded' | 'partial' | 'failed' | 'interrupted' | string;
 	stage: string;
-	request: { trader_profile: PortfolioTraderProfile; holdings: PortfolioHolding[] };
+	request: PortfolioResearchRequest;
 	results: PortfolioHoldingResult[];
 	completed_stocks: number;
 	total_stocks: number;

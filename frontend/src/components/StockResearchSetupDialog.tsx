@@ -7,7 +7,7 @@ const researchLevelOptions: Array<{ value: ResearchAnalysisLevel; title: string;
 	{ value: 'quantitative', title: '量化速览', description: '只使用本地行情与规则计算，不调用 AI。', coverage: '无 AI 判断', tokens: '0 Token', time: '10～45 秒' },
 	{ value: 'quick', title: 'AI 快速研判', description: '用少量核心数据快速形成初步判断，不生成交易计划。', coverage: '基础覆盖', tokens: '约 2,000～6,000', time: '1～3 分钟' },
 	{ value: 'standard', title: 'AI 标准研判', description: '压缩行情与公告，分别生成核心判断和交易条件。', coverage: '中等覆盖', tokens: '约 6,000～16,000', time: '2～6 分钟' },
-	{ value: 'deep', title: 'AI 深度研究', description: '完整执行证据核验、核心判断和交易条件。', coverage: '最高覆盖', tokens: '约 20,000～50,000', time: '3～18 分钟' },
+	{ value: 'deep', title: 'AI 深度研究', description: '完整执行证据核验、核心判断和交易条件。', coverage: '最高覆盖', tokens: '约 20,000～50,000', time: '3～24 分钟' },
 ];
 
 export type ResearchSetupOptions = {

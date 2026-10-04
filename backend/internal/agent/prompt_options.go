@@ -37,7 +37,10 @@ type PromptOptions struct {
 	// Zero leaves timing to the caller. Only actual model output resets idle time.
 	FirstResponseTimeout time.Duration
 	IdleTimeout          time.Duration
-	OnProgress           func(PromptProgress)
+	// Zero keeps runtime retry defaults; a positive value bounds all observed
+	// attempts, including retries inside the provider runtime.
+	MaxAttempts int
+	OnProgress  func(PromptProgress)
 }
 
 type OptionsPrompter interface {

@@ -13,13 +13,13 @@ import (
 	"easy-stock/backend/internal/stockanalysis"
 )
 
-func TestResearchPrompterUsesActivityTimeoutWithoutFixedStageDeadline(t *testing.T) {
+func TestResearchPrompterSeparatesActivityWaitFromStageDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	gateway := &fakeAgentGateway{promptFunc: func(callCtx context.Context, _ string) (agent.PromptResult, error) {
 		deadline, ok := callCtx.Deadline()
-		if !ok || time.Until(deadline) < 9*time.Minute {
-			t.Fatal("fixed stage deadline still truncates active generation")
+		if !ok || time.Until(deadline) < 8*time.Minute-time.Second || time.Until(deadline) > 8*time.Minute {
+			t.Fatal("stage can consume the entire research budget")
 		}
 		return agent.PromptResult{Content: `{"ok":true}`}, nil
 	}}
@@ -28,13 +28,13 @@ func TestResearchPrompterUsesActivityTimeoutWithoutFixedStageDeadline(t *testing
 		t.Fatal(err)
 	}
 	options := gateway.promptOptions[0]
-	if options.FirstResponseTimeout != 300*time.Second || options.IdleTimeout != 300*time.Second || options.OnProgress == nil {
+	if options.FirstResponseTimeout != 300*time.Second || options.IdleTimeout != 300*time.Second || options.OnProgress == nil || options.MaxAttempts != 2 {
 		t.Fatal("activity budget missing")
 	}
 }
 
 func TestResearchPrompterRetriesWatchdogOnceAndRespectsCancellation(t *testing.T) {
-	for _, kind := range []string{"idle", "cancelled", "short_budget", "auth"} {
+	for _, kind := range []string{"idle", "first_response", "cancelled", "short_budget", "auth"} {
 		t.Run(kind, func(t *testing.T) {
 			budget := time.Minute
 			if kind == "short_budget" {
@@ -52,7 +52,11 @@ func TestResearchPrompterRetriesWatchdogOnceAndRespectsCancellation(t *testing.T
 				if kind == "auth" {
 					return agent.PromptResult{}, errors.New("authentication failed")
 				}
-				return agent.PromptResult{Content: `{"part":`}, &agent.PromptTimeoutError{Kind: "idle", Wait: time.Millisecond}
+				timeoutKind := "idle"
+				if kind == "first_response" {
+					timeoutKind = kind
+				}
+				return agent.PromptResult{Content: `{"part":`}, &agent.PromptTimeoutError{Kind: timeoutKind, Wait: time.Millisecond}
 			}}
 			p := researchPrompter{prompter: gateway, waitTimeout: time.Millisecond, consistent: func() bool { return true }}
 			result, err := p.Prompt(ctx, "test")
@@ -67,7 +71,7 @@ func TestResearchPrompterRetriesWatchdogOnceAndRespectsCancellation(t *testing.T
 	}
 }
 
-func TestResearchPrompterAccumulatesObservedRetriesAcrossAttempts(t *testing.T) {
+func TestResearchPrompterDoesNotRetryAfterRuntimeRetries(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	var gateway fakeAgentGateway
@@ -84,11 +88,48 @@ func TestResearchPrompterAccumulatesObservedRetriesAcrossAttempts(t *testing.T) 
 	}}
 	result, err := p.Prompt(ctx, "test")
 	var timeout *agent.PromptTimeoutError
-	if calls != 2 || result.Progress.RetryCount != 6 || !errors.As(err, &timeout) || timeout.Progress.RetryCount != 6 {
+	if calls != 1 || result.Progress.RetryCount != 2 || !errors.As(err, &timeout) || timeout.Progress.RetryCount != 2 {
 		t.Fatalf("lost retries between attempts: calls=%d progress=%+v err=%v", calls, result.Progress, err)
 	}
-	if len(observed) != 3 || observed[0] != 2 || observed[1] != 3 || observed[2] != 6 {
+	if len(observed) != 1 || observed[0] != 2 {
 		t.Fatalf("inconsistent progress retry counts: %v", observed)
+	}
+}
+
+func TestResearchPrompterStageDeadlineStopsActiveCallWithoutCancellingJob(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	calls := 0
+	gateway := &fakeAgentGateway{promptFunc: func(callCtx context.Context, _ string) (agent.PromptResult, error) {
+		calls++
+		<-callCtx.Done()
+		return agent.PromptResult{Content: "draft", Progress: agent.PromptProgress{ReasoningBytes: 128}}, callCtx.Err()
+	}}
+	p := researchPrompter{prompter: gateway, stageTimeout: 40 * time.Millisecond, waitTimeout: time.Millisecond, consistent: func() bool { return true }}
+	result, err := p.Prompt(ctx, "test")
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "单阶段") || calls != 1 || ctx.Err() != nil || result.Content != "draft" {
+		t.Fatalf("stage deadline lost or retried: calls=%d result=%+v err=%v", calls, result, err)
+	}
+}
+
+func TestResearchPrompterSharesStageDeadlineAndRetryAllowance(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	var deadlines []time.Time
+	var gateway fakeAgentGateway
+	gateway.promptFunc = func(callCtx context.Context, _ string) (agent.PromptResult, error) {
+		deadline, _ := callCtx.Deadline()
+		deadlines = append(deadlines, deadline)
+		if len(deadlines) == 1 {
+			return agent.PromptResult{}, &agent.PromptTimeoutError{Kind: "idle", Wait: time.Millisecond}
+		}
+		return agent.PromptResult{Progress: agent.PromptProgress{RetryCount: 1}}, &agent.PromptRetryLimitError{MaxAttempts: 1, Progress: agent.PromptProgress{RetryCount: 1}}
+	}
+	p := researchPrompter{prompter: &gateway, waitTimeout: time.Millisecond, consistent: func() bool { return true }}
+	result, err := p.Prompt(ctx, "test")
+	var limit *agent.PromptRetryLimitError
+	if len(deadlines) != 2 || deadlines[0] != deadlines[1] || gateway.promptOptions[0].MaxAttempts != 2 || gateway.promptOptions[1].MaxAttempts != 1 || result.Progress.RetryCount != 2 || !errors.As(err, &limit) || limit.MaxAttempts != 2 || limit.Progress.RetryCount != 2 {
+		t.Fatalf("retry reset the budget or allowance: deadlines=%v options=%+v result=%+v err=%v", deadlines, gateway.promptOptions, result, err)
 	}
 }
 

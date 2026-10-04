@@ -23,6 +23,7 @@ import {
 	BackendConfig,
 	PortfolioInspectionJob,
 	PortfolioInspectionReport,
+ PortfolioResearchRequest,
 	PortfolioTraderProfile,
 	StockAIAnalysis,
 	StockDirectoryData,
@@ -32,6 +33,7 @@ import {
 import { portfolioDraftToHoldings, portfolioProfiles, readPortfolioDraft, writePortfolioDraft } from '../lib/portfolio-draft';
 import { PortfolioSetupForm } from './PortfolioSetupForm';
 import { ResearchPanel } from './StockResearchReport';
+import { PortfolioAIReportView, originLabel } from './PortfolioAIReport';
 import './portfolio-inspection.css';
 
 type Props = {
@@ -94,8 +96,8 @@ export function PortfolioInspectionWorkspace({ config, refreshKey, onOpenSetting
 				if (!active) return;
 				setJob(payload.data);
 				setHistory((current) => [payload.data, ...current.filter((item) => item.id !== payload.data.id)].slice(0, 12));
-				if (payload.data.status === 'succeeded') setNotice('持仓 AI 巡检已完成，报告已保存在本机');
-				if (payload.data.status === 'partial') setNotice('巡检报告已生成，部分个股或组合分析使用降级结果');
+				if (payload.data.status === 'succeeded') setNotice('持仓 AI 分析已完成，组合评分与报告已保存');
+				if (payload.data.status === 'partial') setNotice(payload.data.results.every((r) => r.status === 'succeeded') ? '个股报告已保存，组合评估尚未完成，可重试组合评估' : '部分个股研究未完成，已有报告已保存，可补齐失败个股');
 			} catch {
 				// Reopening this workspace recovers the persisted task state.
 			}
@@ -105,8 +107,8 @@ export function PortfolioInspectionWorkspace({ config, refreshKey, onOpenSetting
 		return () => { active = false; window.clearInterval(timer); };
 	}, [config, job?.id, job?.status]);
 
-	const startInspection = async () => {
-		if (!config || draft.holdings.length === 0 || totalWeight > 100) return;
+	const startInspection = async (forceSymbols: string[] = [], existing?: PortfolioResearchRequest) => {
+		if (!config || (!existing && (draft.holdings.length === 0 || totalWeight > 100))) return;
 		setStarting(true);
 		setError('');
 		setNotice('');
@@ -115,9 +117,9 @@ export function PortfolioInspectionWorkspace({ config, refreshKey, onOpenSetting
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					trader_profile: draft.profile,
-					holdings: portfolioDraftToHoldings(draft.holdings),
-				}),
+     ...(existing || { trader_profile: draft.profile, holdings: portfolioDraftToHoldings(draft.holdings), horizon: draft.horizon || 'swing', research_level: draft.researchLevel || 'standard' }),
+     force_symbols: forceSymbols,
+    }),
 			});
 			setJob(payload.data);
 			setHistory((current) => [payload.data, ...current.filter((item) => item.id !== payload.data.id)].slice(0, 12));
@@ -128,6 +130,17 @@ export function PortfolioInspectionWorkspace({ config, refreshKey, onOpenSetting
 			setStarting(false);
 		}
 	};
+
+ const resumeInspection = async () => {
+  if (!config || !job) return; setStarting(true); setError('');
+  try { const payload = await requestJSON<{ data: PortfolioInspectionJob }>(config, `/api/v1/portfolio-inspections/${job.id}/resume`, { method: 'POST' }); setJob(payload.data); setHistory((current) => [payload.data, ...current].slice(0, 12)); setNotice('正在恢复任务，已成功个股报告继续复用'); }
+  catch (cause) { setError(cause instanceof Error ? cause.message : '恢复失败'); } finally { setStarting(false); }
+ };
+ const cancelInspection = async () => {
+  if (!config || !job) return; setStarting(true);
+  try { await requestJSON(config, `/api/v1/portfolio-inspections/${job.id}/cancel`, { method: 'POST' }); setNotice('已停止组合任务，共享个股研究可继续完成'); }
+  catch (cause) { setError(cause instanceof Error ? cause.message : '停止失败'); } finally { setStarting(false); }
+ };
 
 	return <div className="portfolio-inspection-workspace">
 		<aside className="portfolio-history stock-ai-panel" aria-label="巡检历史">
@@ -149,11 +162,14 @@ export function PortfolioInspectionWorkspace({ config, refreshKey, onOpenSetting
 
 			{(!job?.report || job.status === 'running') && <>
 				<header className="stock-ai-search-hero portfolio-setup-hero"><div><span>持仓 AI 巡检</span><h2>配置持仓，检查组合风险</h2><p>选择交易风格，填写持仓占比与成本后开始巡检。</p></div><WalletCards size={32} aria-hidden="true" /></header>
-				<PortfolioSetupForm draft={draft} directory={directory} disabled={Boolean(running)} busy={starting || Boolean(running)} actionLabel="开始 AI 巡检" busyLabel={running ? '巡检进行中' : '正在启动'} onChange={setDraft} onSubmit={() => void startInspection()} />
+				<PortfolioSetupForm showResearchOptions draft={draft} directory={directory} disabled={Boolean(running)} busy={starting || Boolean(running)} actionLabel="开始 AI 巡检" busyLabel={running ? '巡检进行中' : '正在启动'} onChange={setDraft} onSubmit={() => void startInspection()} />
 			</>}
 
-			{job?.status === 'running' && <InspectionProgress job={job} />}
-			{job?.report && job.status !== 'running' && <PortfolioReportView report={job.report} status={job.status} onNew={() => setJob(null)} onOpenStockAnalysis={onOpenStockAnalysis} />}
+			{job?.status === 'running' && <><InspectionProgress job={job} /><button type="button" className="portfolio-task-action" disabled={starting} onClick={() => void cancelInspection()}>停止持仓分析</button></>}
+			{job?.resume_available && !running && <div className="portfolio-report-warning portfolio-recovery"><CircleAlert size={16} /><span>{job.error || '上次任务未完成，已有报告已保存'}</span><button type="button" disabled={starting} onClick={() => void resumeInspection()}>{job.results.every((r) => r.status === 'succeeded') ? '重试组合评估' : '补齐失败个股'}</button></div>}
+   {job?.report && job.status !== 'running' && (job.report.algorithm_version === 'portfolio-ai-score-v3'
+    ? <PortfolioAIReportView report={job.report} busy={starting} onNew={() => setJob(null)} onOpenStockAnalysis={onOpenStockAnalysis} onRefresh={(symbol) => void startInspection([symbol], job.report?.request || job.request)} />
+    : <PortfolioReportView report={job.report} status={job.status} onNew={() => setJob(null)} onOpenStockAnalysis={onOpenStockAnalysis} />)}
 		</section>
 	</div>;
 }
@@ -163,8 +179,9 @@ function InspectionProgress({ job }: { job: PortfolioInspectionJob }) {
 	const displayProgress = job.stage === 'aggregating' ? Math.max(86, progress) : Math.max(5, progress);
 	return <section className="portfolio-progress stock-ai-panel" role="status" aria-live="polite">
 		<div className="portfolio-progress-icon"><RefreshCw className="spin" size={24} /></div>
-		<div><span>后台任务 · {stageLabel(job.stage)}</span><strong>巡检耗时较长，可以先使用其他功能</strong><p>{job.message}</p><div className="portfolio-progress-bar"><i style={{ width: `${displayProgress}%` }} /><small>{job.completed_stocks}/{job.total_stocks} 只 · {displayProgress}%</small></div>{job.current_symbols?.length > 0 && <em>正在分析 {job.current_symbols.join('、')}</em>}</div>
-		<small><Clock3 size={14} />离开页面不会中断</small>
+		<div><span>后台任务 · {stageLabel(job.stage)}</span><strong>巡检耗时较长，可以先使用其他功能</strong><p>{job.message}</p><div className="portfolio-progress-bar"><i style={{ width: `${displayProgress}%` }} /><small>{job.completed_stocks}/{job.total_stocks} 只 · {displayProgress}%</small></div>{job.current_symbols?.length > 0 && <em>正在处理 {job.current_symbols.join('、')}</em>}</div>
+		<ul className="portfolio-progress-stocks">{job.results.map((r) => <li key={r.holding.symbol}><b>{r.holding.name || r.holding.symbol}</b><span>{r.status === 'succeeded' ? '完成' : r.status === 'failed' ? '失败' : r.status === 'queued' ? '排队' : r.status === 'resolving' ? '查找报告' : '研究中'} · {originLabel(r.research_origin)}</span>{r.error && <small>{r.error}</small>}</li>)}</ul>
+  <small><Clock3 size={14} />离开页面不会中断 · 已耗时 {elapsedLabel(job.started_at)}{job.aggregation_started_at && ` · 组合评估 ${elapsedLabel(job.aggregation_started_at)}`}</small>
 	</section>;
 }
 
@@ -250,6 +267,7 @@ function cacheDirectory(stocks: StockDirectoryEntry[]) {
 
 function stageLabel(stage: string) {
 	if (stage === 'queued') return '排队准备';
+ if (stage === 'resolving_reports') return '查找可复用报告';
 	if (stage === 'analyzing_stocks') return '逐股分析';
 	if (stage === 'aggregating') return '组合研判';
 	return '处理中';
@@ -270,3 +288,5 @@ function priorityTone(value: string) {
 	if (value === '保持') return 'positive';
 	return 'neutral';
 }
+
+function elapsedLabel(value?: string) { if (!value) return '0 分钟'; const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000)); return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`; }

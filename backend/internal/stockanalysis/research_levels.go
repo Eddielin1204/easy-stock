@@ -52,7 +52,7 @@ func researchLevelPolicyFor(level ResearchLevel) researchLevelPolicy {
 	case ResearchLevelStandard:
 		return researchLevelPolicy{DailyBars: 100, RelativeBars: 6, AnnouncementChars: 700, MaxAnnouncements: 8, MaxCards: 12, MaxEvidenceBytes: 12_000, TradeMaxCards: 8, TradeEvidenceBytes: 8_000, MaxLimitations: 8, MaxAnchors: 3, MaxBaselineDimensions: 4, StageTimeout: 3 * time.Minute, TotalTimeout: 6 * time.Minute}
 	default:
-		return researchLevelPolicy{DailyBars: 300, RelativeBars: 20, AnnouncementChars: 1500, MaxAnnouncements: 12, MaxCards: 16, MaxEvidenceBytes: 24_000, TradeMaxCards: 12, TradeEvidenceBytes: 12_000, MaxLimitations: 16, MaxAnchors: 8, MaxBaselineDimensions: 8, Outline: true, Supplement: true, Repair: true, StageTimeout: 6 * time.Minute, TotalTimeout: 18 * time.Minute}
+		return researchLevelPolicy{DailyBars: 300, RelativeBars: 20, AnnouncementChars: 1500, MaxAnnouncements: 12, MaxCards: 16, MaxEvidenceBytes: 24_000, TradeMaxCards: 12, TradeEvidenceBytes: 12_000, MaxLimitations: 16, MaxAnchors: 8, MaxBaselineDimensions: 8, Outline: true, Supplement: true, Repair: true, StageTimeout: 8 * time.Minute, TotalTimeout: 24 * time.Minute}
 	}
 }
 

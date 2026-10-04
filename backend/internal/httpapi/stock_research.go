@@ -166,12 +166,13 @@ func (s *Server) stockResearchModelIdentity() string {
 
 // Keep per-call time and model identity bounded without losing tool-free options.
 type researchPrompter struct {
-	prompter    agent.Prompter
-	request     stockanalysis.ResearchRequest
-	onCall      func(string, time.Time, int, int, error)
-	consistent  func() bool
-	onProgress  func(string, agent.PromptProgress)
-	waitTimeout time.Duration
+	prompter     agent.Prompter
+	request      stockanalysis.ResearchRequest
+	onCall       func(string, time.Time, int, int, error)
+	consistent   func() bool
+	onProgress   func(string, agent.PromptProgress)
+	waitTimeout  time.Duration
+	stageTimeout time.Duration
 }
 
 func (p researchPrompter) Prompt(ctx context.Context, prompt string) (agent.PromptResult, error) {
@@ -183,6 +184,14 @@ func (p researchPrompter) PromptWithOptions(ctx context.Context, prompt string, 
 		return agent.PromptResult{}, fmt.Errorf("研究期间模型配置发生变化")
 	}
 	callCtx := agent.WithUsageModule(ctx, "stock-analysis")
+	stageLimit := p.stageTimeout
+	if stageLimit <= 0 {
+		stageLimit = stockanalysis.ResearchStageTimeout(p.request)
+	}
+	// One deadline covers the initial call and every runtime/host retry. It
+	// cannot consume the budget reserved for the rest of a deep research job.
+	callCtx, cancel := context.WithTimeout(callCtx, stageLimit)
+	defer cancel()
 	wait := p.waitTimeout
 	if wait <= 0 {
 		wait = stockanalysis.ResearchStageTimeout(p.request)
@@ -191,6 +200,9 @@ func (p researchPrompter) PromptWithOptions(ctx context.Context, prompt string, 
 		}
 	}
 	options.FirstResponseTimeout, options.IdleTimeout = wait, wait
+	if options.MaxAttempts <= 0 || options.MaxAttempts > 2 {
+		options.MaxAttempts = 2
+	}
 	stage := researchPromptStage(prompt)
 	originalProgress := options.OnProgress
 	retryOffset := 0
@@ -211,17 +223,26 @@ func (p researchPrompter) PromptWithOptions(ctx context.Context, prompt string, 
 		if errors.As(err, &timeout) {
 			timeout.Progress.RetryCount += retryOffset
 		}
+		var retryLimit *agent.PromptRetryLimitError
+		if errors.As(err, &retryLimit) {
+			retryLimit.MaxAttempts += retryOffset
+			retryLimit.Progress.RetryCount += retryOffset
+		}
+		if errors.Is(callCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+			err = fmt.Errorf("模型单阶段超过%d秒时限（已接收正文%d字节、思考%d字节、重试%d次）：%w", int(stageLimit.Seconds()), result.Progress.TextBytes, result.Progress.ReasoningBytes, result.Progress.RetryCount, context.DeadlineExceeded)
+		}
 		if p.onCall != nil {
 			p.onCall(stage, startedAt, len([]byte(prompt)), len([]byte(result.Content)), err)
 		}
 		if !p.consistent() {
 			return result, fmt.Errorf("研究期间模型配置发生变化")
 		}
-		deadline, bounded := ctx.Deadline()
+		deadline, bounded := callCtx.Deadline()
 		// Runtime retries already cover transport errors. Only recover an idle
 		// watchdog once, for a tool-free call with enough total budget remaining.
-		if attempt == 0 && options.DisableTools && errors.As(err, &timeout) && ctx.Err() == nil && bounded && time.Until(deadline) > wait+30*time.Second {
+		if attempt == 0 && options.DisableTools && options.MaxAttempts > 1 && result.Progress.RetryCount == 0 && errors.As(err, &timeout) && timeout.Kind == "idle" && callCtx.Err() == nil && bounded && time.Until(deadline) > wait+30*time.Second {
 			retryOffset = result.Progress.RetryCount + 1
+			options.MaxAttempts--
 			if p.onProgress != nil {
 				activity := result.Progress
 				activity.Event = "retry"

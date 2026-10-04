@@ -670,6 +670,9 @@ func (r *HermesRuntime) prompt(ctx context.Context, prompt, browserStatePath str
 		defer sandbox.close()
 		processOptions = sandbox.process
 	}
+	if err := configurePromptTimeouts(ctx, options, &processOptions); err != nil {
+		return PromptResult{}, err
+	}
 	process, err := r.start(ctx, browserStatePath, processOptions)
 	if err != nil {
 		return PromptResult{}, err
@@ -775,6 +778,9 @@ func (r *HermesRuntime) prompt(ctx context.Context, prompt, browserStatePath str
 			}
 			watchdog.observe(frame)
 			result.Progress = watchdog.snapshot()
+			if err := watchdog.retryLimitError(); err != nil {
+				return failure(err)
+			}
 			if usage := usageFromFrame(frame); usage.TotalTokens > 0 {
 				result.Usage = usage
 			}

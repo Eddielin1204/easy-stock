@@ -76,3 +76,26 @@ func (s *Server) portfolioInspectionList(w http.ResponseWriter, r *http.Request)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": jobs})
 }
+
+func (s *Server) portfolioInspectionResume(w http.ResponseWriter, r *http.Request) {
+	job, err := s.portfolioInspection.Resume(r.Context(), r.PathValue("id"))
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, portfolioinspection.ErrJobRunning) {
+			status = http.StatusConflict
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"data": job})
+}
+func (s *Server) portfolioInspectionCancel(w http.ResponseWriter, r *http.Request) {
+	if !s.portfolioInspection.Cancel(r.PathValue("id")) {
+		writeError(w, http.StatusConflict, "持仓任务已结束")
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"message": "持仓分析已停止，共享个股研究可独立完成"})
+}

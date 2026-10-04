@@ -51,7 +51,7 @@ func TestResearchRequestBoundaries(t *testing.T) {
 			t.Fatalf("level normalization: %q %+v %v", level, got, err)
 		}
 	}
-	if ResearchStageTimeout(ResearchRequest{AnalysisLevel: ResearchLevelDeep}) != 6*time.Minute || ResearchTotalTimeout(ResearchRequest{AnalysisLevel: ResearchLevelDeep}) != 18*time.Minute {
+	if ResearchStageTimeout(ResearchRequest{AnalysisLevel: ResearchLevelDeep}) != 8*time.Minute || ResearchTotalTimeout(ResearchRequest{AnalysisLevel: ResearchLevelDeep}) != 24*time.Minute {
 		t.Fatal("deep research timeouts were not expanded")
 	}
 }

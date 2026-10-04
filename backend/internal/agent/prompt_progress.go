@@ -37,6 +37,15 @@ func (e *PromptTimeoutError) Error() string {
 }
 func (e *PromptTimeoutError) Unwrap() error { return context.DeadlineExceeded }
 
+type PromptRetryLimitError struct {
+	MaxAttempts int
+	Progress    PromptProgress
+}
+
+func (e *PromptRetryLimitError) Error() string {
+	return fmt.Sprintf("模型当前阶段已达%d次尝试上限，停止重复生成（已接收正文%d字节、思考%d字节）", e.MaxAttempts, e.Progress.TextBytes, e.Progress.ReasoningBytes)
+}
+
 type promptWatchdog struct {
 	options      PromptOptions
 	started      time.Time
@@ -93,6 +102,12 @@ func (w *promptWatchdog) snapshot() PromptProgress {
 }
 func (w *promptWatchdog) timeout() error {
 	return &PromptTimeoutError{Kind: w.kind, Wait: w.wait, Progress: w.snapshot()}
+}
+func (w *promptWatchdog) retryLimitError() error {
+	if w.options.MaxAttempts > 0 && w.progress.RetryCount >= w.options.MaxAttempts {
+		return &PromptRetryLimitError{MaxAttempts: w.options.MaxAttempts, Progress: w.snapshot()}
+	}
+	return nil
 }
 func (w *promptWatchdog) observe(frame rpcFrame) {
 	event := eventType(frame)

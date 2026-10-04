@@ -503,6 +503,9 @@ func (r *CodexRuntime) PromptWithOptions(ctx context.Context, prompt string, opt
 			}
 			watchdog.observe(f)
 			result.Progress = watchdog.snapshot()
+			if err := watchdog.retryLimitError(); err != nil {
+				return result, err
+			}
 			switch eventType(f) {
 			case "message.delta":
 				result.Content += firstNonEmpty(eventText(f, "delta"), eventText(f, "text"))
