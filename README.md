@@ -280,4 +280,16 @@ easy-stock 项目原创的后端、前端、桌面端和文档采用 [PolyForm N
 
 > 本项目仅用于学习、研究和信息整理，不构成任何投资建议、收益承诺或交易依据。市场有风险，AI 输出和第三方数据也可能存在延迟、遗漏或错误，请始终结合原始信息独立判断并自行承担决策结果。
 
+---
+
+## Star 历史
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=jundizhou/easy-stock&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=jundizhou/easy-stock&type=Date" />
+    <img alt="easy-stock Star 历史曲线" src="https://api.star-history.com/svg?repos=jundizhou/easy-stock&type=Date" />
+  </picture>
+</p>
+
 <p align="center"><sub>Local first · Evidence based · Human in control</sub></p>
