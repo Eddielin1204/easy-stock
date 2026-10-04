@@ -3313,6 +3313,23 @@ a:focus-visible {
 .runtime-log-summary > button:disabled { opacity: .52; cursor: default; }
 
 .settings-grid { display: grid; gap: 12px; }
+.notification-settings-fields { display: grid; gap: 14px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.notification-channel-card { display: grid; gap: 12px; min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--theme-surface-soft, #f7faff); }
+.notification-channel-card header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.notification-channel-card header > div { display: grid; gap: 3px; }
+.notification-channel-card header small, .notification-channel-card > p { color: var(--muted); font-size: 12px; line-height: 1.55; }
+.notification-channel-card > p { margin: 0; }
+.notification-events { display: grid; gap: 10px; padding-top: 2px; }
+.settings-section .notification-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.settings-section .notification-toggle input { width: 16px; height: 16px; min-height: 16px; padding: 0; accent-color: var(--blue); }
+.notification-secret-input { display: flex; gap: 6px; }
+.notification-secret-input input { min-width: 0; flex: 1; }
+.notification-secret-input button, .notification-test-row button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--theme-surface, #fff); color: var(--blue); font-size: 13px; cursor: pointer; flex-shrink: 0; }
+.notification-secret-input button:disabled, .notification-test-row button:disabled, .notification-settings-fields:disabled button { opacity: .5; cursor: default; }
+.notification-test-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; }
+.notification-test-row > span { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 180px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.notification-test-row > .success { color: var(--green); }
+.notification-test-row > .error:has(svg) { color: var(--red); }
 .settings-grid.two-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .llm-profile-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: end; gap: 8px; padding: 10px; border: 1px solid var(--theme-line, #cfe0f2); border-radius: 9px; background: var(--theme-surface-soft, #f7fbff); }
 .llm-profile-toolbar label { min-width: 0; }

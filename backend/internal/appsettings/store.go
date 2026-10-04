@@ -79,6 +79,7 @@ type Values struct {
 	ActiveLLMProfileID string           `json:"active_llm_profile_id,omitempty"`
 	Credentials        Credentials      `json:"credentials"`
 	ReviewAutomation   ReviewAutomation `json:"review_automation"`
+	Notifications      Notifications    `json:"notifications"`
 	UpdatedAt          time.Time        `json:"updated_at,omitempty"`
 }
 
@@ -225,11 +226,14 @@ func llmFromProfile(profile LLMProfile, responseTimeoutSeconds int) LLM {
 }
 
 func defaultValues() Values {
-	return Values{ReviewAutomation: ReviewAutomation{Profiles: []ReviewSourceProfile{
-		{ID: "wechat-default", Source: "wechat", Name: "微信公众号默认配置", SyncHour: 7, AutoAnalyze: true, Enabled: true},
-		{ID: "xueqiu-default", Source: "xueqiu", Name: "雪球默认配置", BaseURL: "https://xueqiu.com", SyncHour: 7, AutoAnalyze: true, Enabled: true},
-		{ID: "taoguba-default", Source: "taoguba", Name: "淘股吧默认配置", BaseURL: "https://www.tgb.cn", SyncHour: 7, AutoAnalyze: true, Enabled: true},
-	}}}
+	return Values{
+		Notifications: Notifications{Events: NotificationEvents{StockResearch: true, PortfolioInspection: true, TaskFailed: true}},
+		ReviewAutomation: ReviewAutomation{Profiles: []ReviewSourceProfile{
+			{ID: "wechat-default", Source: "wechat", Name: "微信公众号默认配置", SyncHour: 7, AutoAnalyze: true, Enabled: true},
+			{ID: "xueqiu-default", Source: "xueqiu", Name: "雪球默认配置", BaseURL: "https://xueqiu.com", SyncHour: 7, AutoAnalyze: true, Enabled: true},
+			{ID: "taoguba-default", Source: "taoguba", Name: "淘股吧默认配置", BaseURL: "https://www.tgb.cn", SyncHour: 7, AutoAnalyze: true, Enabled: true},
+		}},
+	}
 }
 
 func (s *Store) normalizeReviewProfiles() {

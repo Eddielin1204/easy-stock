@@ -41,6 +41,12 @@ type Service struct {
 	cancel         context.CancelFunc
 	wg             sync.WaitGroup
 	closed         bool
+	onComplete     func(Job)
+}
+
+// ConfigureCompletion must be called before starting jobs.
+func (s *Service) ConfigureCompletion(handler func(Job)) {
+	s.onComplete = handler
 }
 
 func NewService(store *Store, gateway agent.Gateway, analyze StockAnalyzer, logger *log.Logger, holdingAnalyzers ...HoldingAnalyzer) *Service {
@@ -547,8 +553,12 @@ func (s *Service) persist(job Job) {
 	job.UpdatedAt = time.Now().UTC()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if _, err := s.store.Save(ctx, job); err != nil && s.logger != nil {
-		s.logger.Printf("level=warn event=portfolio_inspection_persist_error feature=portfolio-inspection job_id=%q error=%q", job.ID, runtimelog.Redact(err.Error()))
+	if _, err := s.store.Save(ctx, job); err != nil {
+		if s.logger != nil {
+			s.logger.Printf("level=warn event=portfolio_inspection_persist_error feature=portfolio-inspection job_id=%q error=%q", job.ID, runtimelog.Redact(err.Error()))
+		}
+	} else if !job.CompletedAt.IsZero() && s.onComplete != nil {
+		s.onComplete(job)
 	}
 }
 

@@ -26,6 +26,7 @@ import { llmBaseURLForAPIMode, llmProviderDefinition, llmProviders } from '../li
 import { AppUpdatePanel } from './AppUpdatePanel';
 import { AgentSettingsPanel } from './AgentSettingsPanel';
 import { SettingsSection } from './SettingsSection';
+import { NotificationSettingsPanel } from './NotificationSettingsPanel';
 
 type Props = {
 	config: BackendConfig | null;
@@ -507,7 +508,7 @@ export function SettingsDrawer({ config, open, initialSection, onClose, onSaved 
 		<div className="settings-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
 			<aside className="settings-drawer" role="dialog" aria-modal="true" aria-label="系统设置">
 				<header className="settings-header">
-					<div><span>AI RUNTIME</span><h2>系统设置</h2><p>管理运行引擎、共享模型与外部数据源凭据</p></div>
+					<div><span>AI RUNTIME</span><h2>系统设置</h2><p>管理运行引擎、共享模型、数据源与消息通知</p></div>
 					<button type="button" onClick={onClose} aria-label="关闭设置"><X size={20} /></button>
 				</header>
 
@@ -576,6 +577,8 @@ export function SettingsDrawer({ config, open, initialSection, onClose, onSaved 
 							<SecretField label="同花顺 Cookie / Token" secretKey="ths_cookie" status={settings?.credentials.ths_cookie} value={secrets.ths_cookie} clearing={clearSecrets.has('ths_cookie')} onChange={updateSecret} onClear={toggleClear} hint="预留：涨停原因与题材催化数据" />
 							<SecretField label="东方财富 Cookie" secretKey="eastmoney_cookie" status={settings?.credentials.eastmoney_cookie} value={secrets.eastmoney_cookie} clearing={clearSecrets.has('eastmoney_cookie')} onChange={updateSecret} onClear={toggleClear} hint="当前公共行情不需要，预留登录态接口" />
 						</SettingsSection>
+
+						<NotificationSettingsPanel config={config} />
 
 						<div ref={updateSectionRef}><AppUpdatePanel /></div>
 

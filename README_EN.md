@@ -242,6 +242,8 @@ For first-time setup (LLM API keys, Xueqiu/TaoGuba login for content sync), see 
 
 To run, debug, test, or build from source, see the [Developer Guide](./docs/development.md) (Chinese — architecture diagrams and code are language-neutral).
 
+Configure Feishu and DingTalk custom group bots under Settings → Notifications, with signatures, keywords, and test messages. See [Notification setup](./docs/notifications.md) (Chinese) for setup and supported events.
+
 ## Community & Contributing
 
 - Discussions, research methods, and use cases: [GitHub Discussions](https://github.com/jundizhou/easy-stock/discussions)

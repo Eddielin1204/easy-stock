@@ -28,10 +28,14 @@ type ResearchService struct {
 	wg                  sync.WaitGroup
 	closed              bool
 	initializationError error
+	onComplete          func(ResearchJob)
 }
 
-func NewResearchService(store *ResearchStore, run ResearchRunner) *ResearchService {
+func NewResearchService(store *ResearchStore, run ResearchRunner, onComplete ...func(ResearchJob)) *ResearchService {
 	s := &ResearchService{store: store, run: run, active: map[string]activeResearch{}, workers: make(chan struct{}, 2)}
+	if len(onComplete) > 0 {
+		s.onComplete = onComplete[0]
+	}
 	if store != nil {
 		s.initializationError = store.MarkInterrupted(context.Background())
 	}
@@ -208,6 +212,8 @@ func (s *ResearchService) execute(ctx context.Context, key string, job ResearchJ
 		s.mu.Lock()
 		s.initializationError = fmt.Errorf("保存研究结果失败：%w", saveErr)
 		s.mu.Unlock()
+	} else if s.onComplete != nil {
+		s.onComplete(job)
 	}
 }
 

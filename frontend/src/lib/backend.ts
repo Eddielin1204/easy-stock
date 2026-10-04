@@ -107,6 +107,7 @@ export type SecretSettingStatus = {
 };
 
 export type AppSettings = {
+	notifications?: NotificationSettings;
 	agent_runtime?: 'hermes' | 'codex';
 	runtimes?: Record<string, { available: boolean; configured: boolean; version?: string; message?: string; }>;
 	agent: {
@@ -138,6 +139,19 @@ export type AppSettings = {
 		profiles: ReviewAutomationProfile[];
 	};
 	updated_at?: string;
+};
+
+export type NotificationChannelSettings = {
+	enabled: boolean;
+	webhook: SecretSettingStatus;
+	secret: SecretSettingStatus;
+	keyword: string;
+};
+
+export type NotificationSettings = {
+	feishu: NotificationChannelSettings;
+	dingtalk: NotificationChannelSettings;
+	events: { stock_research: boolean; portfolio_inspection: boolean; task_failed: boolean };
 };
 
 export type LLMProfile = {

@@ -18,6 +18,7 @@ import (
 	"easy-stock/backend/internal/foundation"
 	"easy-stock/backend/internal/marketemotion"
 	"easy-stock/backend/internal/methodology"
+	"easy-stock/backend/internal/notification"
 	"easy-stock/backend/internal/portfolioinspection"
 	"easy-stock/backend/internal/providers/cls"
 	"easy-stock/backend/internal/providers/duanxianxia"
@@ -72,6 +73,8 @@ type Server struct {
 	reviewImporter        ReviewImporter
 	wechatAPIURL          string
 	settingsStore         *appsettings.Store
+	notificationSender    notificationSender
+	notifications         *notification.Dispatcher
 	reviewAutomation      *review.Automation
 	remoteDailySync       *review.RemoteDailySync
 	agentGateway          agent.Gateway
@@ -318,6 +321,7 @@ func NewServer(config any) *Server {
 		reviewImporter:        cfg.ReviewImporter,
 		wechatAPIURL:          strings.TrimSpace(cfg.WeChatAPIURL),
 		settingsStore:         cfg.SettingsStore,
+		notificationSender:    notification.NewSender(),
 		ladderThemeAI:         newLadderThemeAI(cfg.SettingsPath),
 		reviewAutomation:      cfg.ReviewAutomation,
 		remoteDailySync:       cfg.RemoteDailySync,
@@ -361,8 +365,12 @@ func NewServer(config any) *Server {
 		s.kLineFallback,
 		s.stockConcepts,
 	)
-	s.stockResearch = stockanalysis.NewResearchService(cfg.StockResearchStore, s.runStockResearch)
+	s.notifications = notification.NewDispatcher(func(ctx context.Context, channel string, cfg appsettings.NotificationChannel, message notification.Message) error {
+		return s.notificationSender.Send(ctx, channel, cfg, message)
+	}, func() appsettings.Notifications { return s.settingsStore.Snapshot().Notifications }, cfg.Logger)
+	s.stockResearch = stockanalysis.NewResearchService(cfg.StockResearchStore, s.runStockResearch, s.notifyStockResearch)
 	s.portfolioInspection = portfolioinspection.NewService(cfg.PortfolioStore, usageGateway, s.analyzeStock, cfg.Logger, s.analyzeHoldingResearch)
+	s.portfolioInspection.ConfigureCompletion(s.notifyPortfolioInspection)
 	s.portfolioInspection.ConfigureResearch(s.resolvePortfolioResearch, s.refreshPortfolioQuotes)
 	s.portfolioExpectation = portfolioinspection.NewExpectationService(cfg.PortfolioStore, cfg.ReviewStore, usageGateway, s.analyzeStock, cfg.Logger, s.analyzeHoldingResearch)
 	s.routes()
@@ -390,6 +398,9 @@ func (s *Server) Close() error {
 		s.emotionProgress.close()
 	}
 	var closeErrors []error
+	if s.notifications != nil {
+		s.notifications.Close()
+	}
 	if s.portfolioInspection != nil {
 		s.portfolioInspection.Close()
 	}
@@ -585,6 +596,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/settings/llm/models", s.settingsLLMModels)
 	s.mux.HandleFunc("POST /api/v1/settings/llm/api-key/reveal", s.settingsLLMAPIKeyReveal)
 	s.mux.HandleFunc("POST /api/v1/settings/llm/test", s.settingsLLMTest)
+	s.mux.HandleFunc("GET /api/v1/settings/notifications", s.settingsNotificationsGet)
+	s.mux.HandleFunc("PUT /api/v1/settings/notifications", s.settingsNotificationsUpdate)
+	s.mux.HandleFunc("POST /api/v1/settings/notifications/test", s.settingsNotificationsTest)
 	s.mux.HandleFunc("GET /api/v1/ai/ws", s.aiChatWebSocket)
 	s.mux.HandleFunc("POST /api/v1/strategy/inflections/evaluate", s.inflectionEvaluate)
 	s.mux.HandleFunc("GET /api/v1/ws/stream", s.stream)
