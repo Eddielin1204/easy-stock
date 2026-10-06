@@ -43,12 +43,10 @@ export function ThemeIndexPanel({ config, theme, refreshKey }: { config: Backend
 	const label = { day: '日K', week: '周K', month: '月K' }[period];
 	return <section className="theme-index-panel" aria-label="题材指数走势">
 		<div className="theme-index-heading">
-			<div><span>题材指数</span><h3>{theme?.name || '选择题材'}</h3><small>{series ? series.method === 'provider-index' ? `${series.index_name} · ${series.index_code} · 来源指数` : `等权参考指数 · 基准${series.base_value}点 · 当前成分回溯` : '查看题材整体走势'}</small></div>
+			<div><span>题材指数</span><h3>{theme?.name || '选择题材'}</h3><small>{series ? series.method === 'provider-index' ? `${series.index_name} · ${series.index_code}` : '等权参考指数' : '查看题材整体走势'}</small></div>
 			<div className="theme-index-controls"><div role="group" aria-label="题材指数K线周期">{(['day', 'week', 'month'] as const).map(value => <button type="button" key={value} aria-pressed={period === value} className={period === value ? 'active' : ''} onClick={() => setPeriod(value)}>{{ day: '日K', week: '周K', month: '月K' }[value]}</button>)}</div>{latest && <strong className={latest.change_percent && latest.change_percent < 0 ? 'down' : 'up'}>{latest.close.toFixed(2)}<small>{latest.change_percent == null ? '--' : `${latest.change_percent >= 0 ? '+' : ''}${latest.change_percent.toFixed(2)}%`}</small></strong>}</div>
 		</div>
 		<KLineChart key={`${key}:${period}`} lines={lines} state={series ? 'ready' : state} periodLabel={label} compact timeZone="Asia/Shanghai" />
-		{series?.method === 'equal-weight' && <p className="theme-index-quality">历史覆盖 {series.quality.loaded}/{series.quality.sampled} 只 · 题材成分 {series.quality.constituents} 只 · 高低价为估计{series.quality.sampling_estimate_available ? ` · 近20日日收益抽样误差参考 ±${series.quality.sampling_error_percent.toFixed(2)}个百分点` : series.quality.sampled < series.quality.constituents ? ' · 抽样误差暂不可估计' : ''}</p>}
-		{series && <details className="theme-index-method"><summary>数据来源与计算口径 · 截至 {series.meta.trade_date}{series.meta.stale ? ' · 部分数据待更新' : ''}</summary><p>{series.method === 'provider-index' ? '直接使用对应板块来源指数，保留其编制口径。' : `按成分股前复权日收益等权链式计算，不按股价加权。基准日${series.base_date}收盘为1000点，仅用于观察当前题材成分走势。`}</p>{series.warnings.map((warning, index) => <p key={index}>{warning}</p>)}</details>}
 		{error && <p className="load-notice">{error} <button type="button" onClick={() => setRetry(value => value + 1)}>重试题材指数</button></p>}
 	</section>;
 }
