@@ -33,6 +33,7 @@ import (
 	"easy-stock/backend/internal/sector"
 	"easy-stock/backend/internal/stockanalysis"
 	"easy-stock/backend/internal/strategy/inflection"
+	"easy-stock/backend/internal/themeindex"
 )
 
 type Server struct {
@@ -46,6 +47,7 @@ type Server struct {
 	stockNewsSearch       StockNewsSearchProvider
 	sectorMap             SectorMapProvider
 	themeOverview         ThemeOverviewProvider
+	themeIndex            *themeindex.Service
 	limitUpProvider       LimitUpProvider
 	marketPools           MarketPoolProvider
 	stockConcepts         StockConceptProvider
@@ -373,6 +375,24 @@ func NewServer(config any) *Server {
 	s.portfolioInspection.ConfigureCompletion(s.notifyPortfolioInspection)
 	s.portfolioInspection.ConfigureResearch(s.resolvePortfolioResearch, s.refreshPortfolioQuotes)
 	s.portfolioExpectation = portfolioinspection.NewExpectationService(cfg.PortfolioStore, cfg.ReviewStore, usageGateway, s.analyzeStock, cfg.Logger, s.analyzeHoldingResearch)
+	s.themeIndex = cfg.ThemeIndex
+	if s.themeIndex == nil {
+		history := &themeIndexHistory{primary: eastMoneyClient, fallback: tencentClient}
+		s.themeIndex = themeindex.New(themeindex.Config{
+			Boards: eastMoneyClient,
+			Resolve: func(ctx context.Context, theme, snapshot string) (foundation.ThemeIndexTarget, error) {
+				if resolver, ok := s.sectorMap.(interface {
+					ResolveThemeIndex(context.Context, string, string) (foundation.ThemeIndexTarget, error)
+				}); ok {
+					return resolver.ResolveThemeIndex(ctx, theme, snapshot)
+				}
+				value, err := s.loadThemeIndexMembers(ctx, theme, snapshot)
+				return foundation.ThemeIndexTarget{Name: value.Name, Names: []string{value.Name}}, err
+			},
+			Members: s.loadThemeIndexMembers,
+			KLines:  history.load,
+		})
+	}
 	s.routes()
 	return s
 }
@@ -531,6 +551,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/research/institution-reports", s.marketInstitutionReportsHandler)
 	s.mux.HandleFunc("GET /api/v1/research/industries", s.marketIndustryResearchHandler)
 	s.mux.HandleFunc("GET /api/v1/themes/overview", s.themeOverviewHandler)
+	s.mux.HandleFunc("GET /api/v1/themes/index", s.themeIndexHandler)
 	s.mux.HandleFunc("GET /api/v1/themes/screen", s.themeScreenHandler)
 	s.mux.HandleFunc("GET /api/v1/sector-map", s.sectorMapHandler)
 	s.mux.HandleFunc("GET /api/v1/short-term/limit-up-ladder", s.limitUpLadderHandler)
