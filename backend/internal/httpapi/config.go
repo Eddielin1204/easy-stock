@@ -15,6 +15,7 @@ import (
 	"easy-stock/backend/internal/review"
 	"easy-stock/backend/internal/stockanalysis"
 	"easy-stock/backend/internal/strategy/inflection"
+	"easy-stock/backend/internal/themeindex"
 )
 
 type RealtimeProvider interface {
@@ -123,6 +124,7 @@ type Config struct {
 	StockNews            StockNewsSearchProvider
 	SectorMap            SectorMapProvider
 	ThemeOverview        ThemeOverviewProvider
+	ThemeIndex           *themeindex.Service
 	ThemeRadarFallback   ThemeRadarFallback
 	LimitUp              LimitUpProvider
 	MarketPools          MarketPoolProvider

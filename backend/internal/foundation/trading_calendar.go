@@ -2,6 +2,8 @@ package foundation
 
 import "time"
 
+var aStockCalendarLocation = time.FixedZone("Asia/Shanghai", 8*60*60)
+
 // A-share exchanges are closed on weekends and the statutory holiday ranges
 // below. The list is kept locally so summary generation remains deterministic
 // and does not depend on a third-party calendar endpoint. Add each year's
@@ -23,7 +25,7 @@ var aStockHolidayRanges = [][2]string{
 }
 
 func IsAStockTradingDay(value time.Time) bool {
-	day := value.In(time.FixedZone("Asia/Shanghai", 8*60*60))
+	day := value.In(aStockCalendarLocation)
 	date := day.Format("2006-01-02")
 	for _, holiday := range aStockHolidayRanges {
 		if date >= holiday[0] && date <= holiday[1] {
