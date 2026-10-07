@@ -11,7 +11,11 @@ import (
 
 func (s *Server) resolvePortfolioResearch(ctx context.Context, holding portfolioinspection.Holding, request portfolioinspection.Request, asOf time.Time, force bool, resumeID string, notify func(portfolioinspection.HoldingResult)) (portfolioinspection.HoldingResult, error) {
 	result := portfolioinspection.HoldingResult{Holding: holding}
-	job, origin, err := s.stockResearch.ResolveForPortfolio(ctx, stockanalysis.ResearchRequest{Symbol: holding.Symbol, Purpose: "holding", Horizon: request.Horizon, CostPrice: holding.CostPrice, AnalysisLevel: request.ResearchLevel}, asOf, force, resumeID)
+	purpose := "holding"
+	if holding.Weight == 0 {
+		purpose = "new_position"
+	}
+	job, origin, err := s.stockResearch.ResolveForPortfolio(ctx, stockanalysis.ResearchRequest{Symbol: holding.Symbol, Purpose: purpose, Horizon: request.Horizon, CostPrice: holding.CostPrice, AnalysisLevel: request.ResearchLevel}, asOf, force, resumeID)
 	if err != nil {
 		return result, err
 	}
@@ -37,6 +41,7 @@ func (s *Server) resolvePortfolioResearch(ctx context.Context, holding portfolio
 		}
 	}
 	result.ResearchDurationMS = time.Since(started).Milliseconds()
+	job = stockanalysis.RevalidateReusableResearch(job)
 	result.ReportCompletedAt = stockanalysis.ResearchCompletedAt(job)
 	result.Analysis = job.Analysis
 	if job.Analysis != nil && job.Analysis.ResearchReport != nil {

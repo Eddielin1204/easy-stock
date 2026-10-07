@@ -10,8 +10,50 @@ import (
 	"time"
 
 	"easy-stock/backend/internal/agent"
+	"easy-stock/backend/internal/appsettings"
 	"easy-stock/backend/internal/stockanalysis"
 )
+
+func TestResearchPreparedBudgetControlsBothStageAndActivityWait(t *testing.T) {
+	store, err := appsettings.Open("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.Update(func(values *appsettings.Values) error {
+		values.LLM.ResponseTimeoutSeconds = 300
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway := &fakeAgentGateway{agentSettings: agent.AgentSettings{ReasoningEffort: "max"}}
+	server := &Server{settingsStore: store, agentGateway: gateway}
+	request := stockanalysis.ResearchRequest{AnalysisLevel: stockanalysis.ResearchLevelStandard}
+	ctx, budget, release, err := server.prepareStockResearch(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	ctx, cancel := context.WithTimeout(stockanalysis.WithResearchBudget(ctx, budget), budget.TotalTimeout())
+	defer cancel()
+	// A later setting change cannot restore the old 180-second deadline.
+	gateway.agentSettings.ReasoningEffort = "low"
+	gateway.promptFunc = func(callCtx context.Context, _ string) (agent.PromptResult, error) {
+		deadline, ok := callCtx.Deadline()
+		if !ok || time.Until(deadline) < 15*time.Minute-time.Second || time.Until(deadline) > 15*time.Minute {
+			t.Fatal("maximum reasoning is still truncated by the standard stage")
+		}
+		return agent.PromptResult{Content: "answer"}, nil
+	}
+	p := researchPrompter{prompter: gateway, request: request, consistent: func() bool { return true }}
+	if _, err := p.Prompt(ctx, "core"); err != nil {
+		t.Fatal(err)
+	}
+	options := gateway.promptOptions[0]
+	if options.FirstResponseTimeout != 300*time.Second || options.IdleTimeout != 300*time.Second || budget.TotalTimeout() != 47*time.Minute {
+		t.Fatalf("stage, wait and total budgets diverged: budget=%+v options=%+v", budget, options)
+	}
+}
 
 func TestResearchPrompterSeparatesActivityWaitFromStageDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)

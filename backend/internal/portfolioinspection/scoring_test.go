@@ -24,7 +24,7 @@ func scoreFixture() (Request, []HoldingResult, Metrics, AIReport) {
 	report := AIReport{RiskLevel: "中", RiskReason: "仓位较集中", StyleMatch: "部分偏离", ExecutiveSummary: "按条件管理持仓", ConfidenceLevel: "中", ConfidenceReason: "部分条件待验证", Holdings: []HoldingConclusion{{Symbol: "600519.SH", Conclusion: "保持观察", ActionPriority: "观察", Action: "确认前观察", Confirmation: "趋势延续", Invalidation: "趋势破坏"}}, Scenarios: []Scenario{{Name: "震荡分化", Condition: "趋势走弱", PortfolioAction: "复核持有逻辑"}}}
 	for i, r := range scoreRubric {
 		score := 70 + i
-		report.Dimensions = append(report.Dimensions, ScoreDimension{Key: r.Key, Score: &score, Reason: "证据支持的有限判断", EvidenceRefs: []EvidenceRef{{Fact: "cash_percent"}}})
+		report.Dimensions = append(report.Dimensions, ScoreDimension{Key: r.Key, Score: &score, Reason: "证据支持的有限判断", EvidenceRefs: []EvidenceRef{{Fact: "concentration_hhi"}}})
 	}
 	return req, results, metrics, report
 }

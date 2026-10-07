@@ -148,10 +148,13 @@ func TestResearchEvidenceReasonsExplainActualDowngrade(t *testing.T) {
 	_, snapshot := researchFixture(t)
 	result := validResearch()
 	result.EvidenceLevel = "sufficient"
+	news := NewResearchSource("news", "订单传闻", "订单仍待公司确认", "fixture", "", snapshot.CutoffAt.Add(-time.Hour), snapshot.CapturedAt)
+	snapshot.Sources = append(snapshot.Sources, news)
+	result.Thesis.SourceIDs = []string{news.ID}
 	if _, err := validateResearch(&result, snapshot); err != nil {
 		t.Fatal(err)
 	}
-	if result.EvidenceLevel != "limited" || !strings.Contains(strings.Join(result.EvidenceReasons, " "), "未引用可用的公司公告正文") {
+	if result.EvidenceLevel != "limited" || !strings.Contains(strings.Join(result.EvidenceReasons, " "), "第三方摘要") {
 		t.Fatalf("coverage downgrade has no specific reason: %v", result.EvidenceReasons)
 	}
 }

@@ -18,6 +18,20 @@ func researchSourceForLevel(source ResearchSource, snapshot ResearchSnapshot, po
 	if source.ID == "f-financial" {
 		var value map[string]any
 		if json.Unmarshal([]byte(source.Content), &value) == nil {
+			if data, ok := value["data"].(map[string]any); ok {
+				date, _ := data["report_date"].(string)
+				limit := 8
+				if policy.DailyBars == 60 {
+					limit = 1
+				} else if policy.DailyBars == 100 {
+					limit = 4
+				}
+				for _, key := range []string{"history", "supplemental_history", "cross_checks"} {
+					if items, ok := value[key].([]any); ok {
+						value[key] = selectComparableFinancialPeriods(items, date, limit)
+					}
+				}
+			}
 			if history, ok := value["history"].([]any); ok {
 				if policy.DailyBars == 60 {
 					delete(value, "history")
@@ -31,17 +45,8 @@ func researchSourceForLevel(source ResearchSource, snapshot ResearchSnapshot, po
 							history = history[1:]
 						}
 					}
-					if policy.DailyBars == 100 && len(history) > 3 {
-						history = history[:3]
-					}
-					for len(history) > 2 {
-						value["history"] = history
-						encoded, _ := json.Marshal(compactResearchJSON(value, 0, source.ID, policy))
-						if len(encoded) <= policy.MaxEvidenceBytes/6 {
-							break
-						}
-						history = history[:len(history)-1]
-					}
+					// Reserve prior-year matching quarters before generic budget
+					// compression; recent three periods alone cannot establish Q2 YoY.
 					value["history"] = history
 					value["history_note"] = "最新期见data；history为预算内最近可比累计披露，不代表全部历史"
 				}

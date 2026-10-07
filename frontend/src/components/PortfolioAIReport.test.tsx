@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { PortfolioAIReportView, portfolioDate } from './PortfolioAIReport';
 import type { PortfolioInspectionReport } from '../lib/backend';
+import { portfolioScoringVersion } from '../lib/portfolio-optimization';
 
 const report = {
  id: 'fixture', algorithm_version: 'portfolio-ai-score-v3', profile: { label: '均衡' }, request: { horizon: 'swing' }, generated_at: '2026-10-04T06:00:00Z',
@@ -12,8 +13,16 @@ const report = {
 } as unknown as PortfolioInspectionReport;
 const markup = (value = report) => renderToStaticMarkup(<PortfolioAIReportView report={value} onNew={() => {}} onRefresh={() => {}} onOpenStockAnalysis={() => {}} />);
 describe('portfolio AI report', () => {
+ it('labels the stock-only score and preserves historical scoring scope', () => {
+  const current = markup({ ...report, algorithm_version: portfolioScoringVersion });
+  expect(current).toContain('股票组合健康度');
+  expect(current).toContain('总仓位、满仓和现金比例不加扣分');
+  expect(current).toContain('70分整体合理');
+  expect(markup()).toContain('此报告使用历史评分口径');
+  expect(markup()).not.toContain('总仓位、满仓和现金比例不加扣分');
+ });
  it('shows complete AI scores without requiring static stops and separates scope', () => {
-  const text = markup(); expect(text).toContain('组合综合评分'); expect(text).toContain('71'); expect(text).toContain('置信度'); expect(text).toContain('未设置有效静态止损方案'); expect(text).toContain('复用成功报告'); expect(text).toContain('原研究周期'); expect(text).toContain('成本未填写'); expect(text).not.toContain('覆盖不足，暂不评分');
+  const text = markup(); expect(text).toContain('组合综合评分'); expect(text).toContain('71'); expect(text).toContain('未设置有效静态止损方案'); expect(text).toContain('复用成功报告'); expect(text).toContain('原研究周期'); expect(text).toContain('成本未填写'); expect(text).not.toContain('覆盖不足，暂不评分');
  });
  it('does not present incomplete output as a zero score', () => {
   const value = { ...report, conclusion: { ...report.conclusion, total_score: undefined, score_available: false } }; const text = markup(value); expect(text).toContain('待完成'); expect(text).not.toContain('组合 AI 四维评分');

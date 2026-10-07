@@ -44,7 +44,27 @@ func decodeScoringReport(content string) (AIReport, error) {
 	if value, ok := raw["dimensions"]; ok {
 		var dimensions []map[string]json.RawMessage
 		if err := json.Unmarshal(value, &dimensions); err != nil {
-			return AIReport{}, fmt.Errorf("dimensions: %w", err)
+			// The four canonical keys also unambiguously identify a keyed object.
+			// Normalize container shape only, preserving every value and citation.
+			var keyed map[string]map[string]json.RawMessage
+			if json.Unmarshal(value, &keyed) != nil || len(keyed) != len(scoreRubric) {
+				return AIReport{}, fmt.Errorf("dimensions: %w", err)
+			}
+			for _, rubric := range scoreRubric {
+				d, exists := keyed[rubric.Key]
+				if !exists {
+					return AIReport{}, errors.New("评分对象缺少规范维度")
+				}
+				if rawKey, exists := d["key"]; exists {
+					var key string
+					if json.Unmarshal(rawKey, &key) != nil || key != rubric.Key {
+						return AIReport{}, errors.New("评分对象key与维度名称冲突")
+					}
+				} else {
+					d["key"], _ = json.Marshal(rubric.Key)
+				}
+				dimensions = append(dimensions, d)
+			}
 		}
 		for _, d := range dimensions {
 			var key string
@@ -73,6 +93,12 @@ func decodeScoringReport(content string) (AIReport, error) {
 
 func normalizeExplanationList(value json.RawMessage, field string, details map[string]ExplanationDetail) (json.RawMessage, error) {
 	var items []json.RawMessage
+	var single string
+	if json.Unmarshal(value, &single) == nil && strings.TrimSpace(single) != "" {
+		// A single narrative item has the same meaning as a one-item list.
+		// Keep its text; numeric scores and evidence are not normalized here.
+		value, _ = json.Marshal([]string{single})
+	}
 	if err := json.Unmarshal(value, &items); err != nil {
 		return nil, fmt.Errorf("%s必须是说明列表: %w", field, err)
 	}

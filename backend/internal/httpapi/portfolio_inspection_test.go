@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const validPortfolioScoreJSON = `{"risk_level":"高","risk_reason":"集中持仓需要管理","style_match":"部分偏离","executive_summary":"逻辑仍需确认，组合集中风险较高。","confidence_level":"中","confidence_reason":"证据有限，原研究周期不同","dimensions":[{"key":"holding_logic","score":70,"reason":"有限证据","evidence_refs":[{"report_id":"reuse-http","source_id":"s1"}]},{"key":"portfolio_structure","score":71,"reason":"集中风险","evidence_refs":[{"fact":"max_single_percent"}]},{"key":"risk_capacity","score":72,"reason":"现金缓冲","evidence_refs":[{"fact":"cash_percent"}]},{"key":"strategy_fit","score":73,"reason":"持有周期差异","evidence_refs":[{"fact":"total_position_percent"}]}],"holdings":[{"symbol":"600519.SH","portfolio_role":"观察","conclusion":"持有逻辑待验证","action_priority":"观察","action":"等待验证","confirmation":"趋势延续","invalidation":"趋势破坏"}],"scenarios":[{"name":"震荡分化","condition":"趋势走弱","portfolio_action":"复核持有逻辑"}],"adjustment_order":["先核实趋势"],"primary_risks":[],"concentration_findings":[],"next_checklist":[],"data_limitations":[]}`
+const validPortfolioScoreJSON = `{"risk_level":"高","risk_reason":"集中持仓需要管理","style_match":"部分偏离","executive_summary":"逻辑仍需确认，组合集中风险较高。","confidence_level":"中","confidence_reason":"证据有限，原研究周期不同","dimensions":[{"key":"holding_logic","score":70,"reason":"有限证据","evidence_refs":[{"report_id":"reuse-http","source_id":"s1"}]},{"key":"portfolio_structure","score":71,"reason":"集中风险","evidence_refs":[{"fact":"equity_max_single_percent"}]},{"key":"risk_capacity","score":72,"reason":"退出条件需确认","evidence_refs":[{"fact":"stop_loss_coverage_percent"}]},{"key":"strategy_fit","score":73,"reason":"持有周期差异","evidence_refs":[{"fact":"profile.scoring_description"}]}],"holdings":[{"symbol":"600519.SH","portfolio_role":"观察","conclusion":"持有逻辑待验证","action_priority":"观察","action":"等待验证","confirmation":"趋势延续","invalidation":"趋势破坏"}],"scenarios":[{"name":"震荡分化","condition":"趋势走弱","portfolio_action":"复核持有逻辑"}],"adjustment_order":["先核实趋势"],"primary_risks":[],"concentration_findings":[],"next_checklist":[],"data_limitations":[]}`
 
 func seedPortfolioResearch(t *testing.T, s *Server) {
 	t.Helper()
@@ -76,7 +76,7 @@ func TestPortfolioInspectionReusesReportsAndReturnsIndependentAIScore(t *testing
 		t.Fatal("组合汇总未禁用工具或运行时重试")
 	}
 	r := done.Report
-	if r.AlgorithmVersion != "portfolio-ai-score-v3" || r.Metrics.StopLossCoveragePercent != 0 || !r.Conclusion.ScoreAvailable || *r.Conclusion.TotalScore != 71 || r.Conclusion.RiskLevel != "高" || r.Holdings[0].ResearchOrigin != "reused" || calls.Load() != 1 {
+	if r.AlgorithmVersion != "portfolio-ai-score-v4" || r.Metrics.StopLossCoveragePercent != 0 || !r.Conclusion.ScoreAvailable || *r.Conclusion.TotalScore != 71 || r.Conclusion.RiskLevel != "高" || r.Holdings[0].ResearchOrigin != "reused" || calls.Load() != 1 {
 		t.Fatalf("incorrect report %+v calls=%d", r, calls.Load())
 	}
 	// Changing holdings inputs only generates a new portfolio conclusion, not stock research.

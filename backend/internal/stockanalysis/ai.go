@@ -668,6 +668,7 @@ type promptJSONObjectOptions struct {
 	maxAttempts  int
 	disableTools bool
 	onAttempt    func(promptJSONAttempt)
+	validate     func(any) error
 }
 
 type invalidJSONResponseError struct {
@@ -728,7 +729,7 @@ func promptJSONObjectWithOptions[T any](ctx context.Context, prompter agent.Prom
 		}
 
 		decoded = *new(T)
-		decodeErr := decodeJSONObject(result.Content, &decoded)
+		decodeErr := decodeJSONObjectWithValidation(result.Content, &decoded, options.validate)
 		if decodeErr == nil {
 			if options.onAttempt != nil {
 				options.onAttempt(diagnostic)
@@ -761,6 +762,12 @@ func promptJSONObjectWithOptions[T any](ctx context.Context, prompter agent.Prom
 }
 
 func decodeJSONObject(content string, target any) error {
+	return decodeJSONObjectWithValidation(content, target, nil)
+}
+
+// Validate each candidate before accepting it, so an incidental matching field
+// in a nested object cannot stand in for a complete research stage.
+func decodeJSONObjectWithValidation(content string, target any, validate func(any) error) error {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return errors.New("empty response")
@@ -777,7 +784,7 @@ func decodeJSONObject(content string, target any) error {
 			candidate := content[start:end]
 			if !hasKnownJSONField(candidate, target) {
 				lastErr = errors.New("JSON object does not contain expected fields")
-			} else if err := decodeFreshJSONObject(candidate, target); err == nil {
+			} else if err := decodeFreshJSONObject(candidate, target, validate); err == nil {
 				return nil
 			} else {
 				lastErr = err
@@ -834,7 +841,7 @@ func hasKnownJSONField(candidate string, target any) bool {
 	return false
 }
 
-func decodeFreshJSONObject(candidate string, target any) error {
+func decodeFreshJSONObject(candidate string, target any, validate func(any) error) error {
 	targetValue := reflect.ValueOf(target)
 	if !targetValue.IsValid() || targetValue.Kind() != reflect.Pointer || targetValue.IsNil() {
 		return errors.New("JSON decode target must be a non-nil pointer")
@@ -843,6 +850,11 @@ func decodeFreshJSONObject(candidate string, target any) error {
 	decoder := json.NewDecoder(strings.NewReader(candidate))
 	if err := decoder.Decode(fresh.Interface()); err != nil {
 		return err
+	}
+	if validate != nil {
+		if err := validate(fresh.Interface()); err != nil {
+			return err
+		}
 	}
 	targetValue.Elem().Set(fresh.Elem())
 	return nil

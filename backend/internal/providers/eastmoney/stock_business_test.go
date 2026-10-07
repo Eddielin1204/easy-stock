@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -90,5 +91,21 @@ func TestStockFinancialHistoryRequestsComparablePeriodsAndPublicationDate(t *tes
 	}
 	if len(items) != 2 || items[0].Revenue != 260 || items[0].PublishedAt.IsZero() || items[0].PublishedAt.Equal(items[1].PublishedAt) || items[1].DeductedNetProfitAvailable {
 		t.Fatalf("history dates or missing-value semantics lost: %+v", items)
+	}
+}
+
+func TestFinancialHistoryDistinguishesFlatGrowthFromMissing(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"success":true,"result":{"data":[{"TOTALOPERATEREVETZ":0,"PARENTNETPROFITTZ":"0","KCFJCXSYJLRTZ":0},{"TOTALOPERATEREVETZ":null,"PARENTNETPROFITTZ":"--"}]}}`))
+	}))
+	defer server.Close()
+	rows, err := NewClient(WithF10BaseURL(server.URL)).StockFinancialHistory(context.Background(), "600519.SH", 2)
+	if err != nil || len(rows) != 2 {
+		t.Fatal(rows, err)
+	}
+	for _, name := range []string{"revenue_yoy", "net_profit_yoy", "deducted_net_profit_yoy"} {
+		if !slices.Contains(rows[0].Meta.AvailableFields, name) || slices.Contains(rows[1].Meta.AvailableFields, name) {
+			t.Fatal("zero/missing distinction lost", rows)
+		}
 	}
 }

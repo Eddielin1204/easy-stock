@@ -5,7 +5,8 @@ import (
 	"math"
 	"sort"
 	"strings"
-	"time"
+
+	"easy-stock/backend/internal/foundation"
 )
 
 func validateResearch(result *ResearchSynthesis, snapshot ResearchSnapshot) ([]string, error) {
@@ -98,28 +99,34 @@ func validateResearch(result *ResearchSynthesis, snapshot ResearchSnapshot) ([]s
 		result.EvidenceLevel = "insufficient"
 		result.EvidenceReasons = append(result.EvidenceReasons, "有效支持依据少于2条，尚不足以支撑核心判断")
 	}
-	if len(snapshot.DailyBars) < 20 {
-		result.EvidenceLevel = "insufficient"
-		result.EvidenceReasons = append(result.EvidenceReasons, "历史日线样本不足20日，趋势依据不足")
-	}
 	if result.EvidenceLevel == "sufficient" {
-		coverage := map[string]bool{}
-		for _, claim := range append(append([]ResearchClaim{result.Thesis}, result.Support...), result.Counter...) {
-			for _, id := range claim.SourceIDs {
-				if sources[id].Kind == "announcement" && !ResearchSourceHasBody(sources[id]) {
-					continue
-				}
-				coverage[sources[id].Kind] = true
+		// Financial disclosures and reproducible price calculations can support
+		// their own scoped judgments without an unrelated announcement. News
+		// summaries and title-only announcements cannot establish a core thesis.
+		primary := researchClaimHasPrimaryEvidence(result.Thesis, sources)
+		directSupport := 0
+		for _, claim := range result.Support {
+			if researchClaimHasPrimaryEvidence(claim, sources) {
+				directSupport++
 			}
 		}
-		if !coverage["announcement"] || (!coverage["disclosure"] && !coverage["company_profile"]) {
+		if !primary || directSupport < 2 {
 			result.EvidenceLevel = "limited"
-			notes = append(notes, "公司披露与业务证据覆盖不完整，证据充分度不标为充分")
-			if !coverage["announcement"] {
-				result.EvidenceReasons = append(result.EvidenceReasons, "核心判断未引用可用的公司公告正文，事件依据尚未核实")
+			result.EvidenceReasons = append(result.EvidenceReasons, "核心判断或支持依据仅依赖第三方摘要、观点或公告标题，直接披露或可复算的数据依据不足")
+			notes = append(notes, "核心判断缺少直接证据，证据充分度按有限处理")
+		}
+		coreSourceIDs := append([]string{}, result.Thesis.SourceIDs...)
+		for _, claim := range result.Support {
+			coreSourceIDs = append(coreSourceIDs, claim.SourceIDs...)
+		}
+		for _, id := range coreSourceIDs {
+			if id != "f-financial" {
+				continue
 			}
-			if !coverage["disclosure"] && !coverage["company_profile"] {
-				result.EvidenceReasons = append(result.EvidenceReasons, "核心判断未引用财务披露或业务资料")
+			if reason := financialConflictReason(sources[id]); reason != "" {
+				result.EvidenceLevel = "limited"
+				result.EvidenceReasons = append(result.EvidenceReasons, reason)
+				break
 			}
 		}
 	}
@@ -233,6 +240,7 @@ func validateResearch(result *ResearchSynthesis, snapshot ResearchSnapshot) ([]s
 	}
 	decision := &result.Decision
 	originalStatus := decision.Status
+	decision.Blockers = nil // These are computed by validation, never trusted from the model.
 	switch decision.Status {
 	case "observe", "conditional", "no_plan":
 	default:
@@ -243,12 +251,20 @@ func validateResearch(result *ResearchSynthesis, snapshot ResearchSnapshot) ([]s
 	}
 	if result.EvidenceLevel == "insufficient" || len(result.InvalidationIDs) == 0 {
 		decision.Status = "no_plan"
-		notes = append(notes, "证据不足或缺少失效条件，未形成交易计划")
+		if result.EvidenceLevel == "insufficient" {
+			decision.Blockers = append(decision.Blockers, "核心判断证据不足："+strings.Join(result.EvidenceReasons, "；"))
+		}
+		if len(result.InvalidationIDs) == 0 {
+			decision.Blockers = append(decision.Blockers, "缺少可验证的核心判断失效条件")
+		}
+	}
+	if len(snapshot.DailyBars) < 20 && decision.Status == "conditional" {
+		decision.Status = "no_plan"
+		decision.Blockers = append(decision.Blockers, "历史日线不足20个样本，不能生成趋势交易计划")
 	}
 	if researchPricesStale(snapshot) {
 		decision.Status = "no_plan"
-		result.EvidenceLevel = "insufficient"
-		notes = append(notes, "行情时效不足，不能据此形成当前交易计划")
+		decision.Blockers = append(decision.Blockers, researchPriceFreshnessReason(snapshot))
 	}
 	if decision.NewPosition == "" || decision.ExistingPosition == "" || decision.Reason == "" {
 		return notes, fmt.Errorf("必须分别说明新仓、已有仓位和计划依据")
@@ -259,26 +275,42 @@ func validateResearch(result *ResearchSynthesis, snapshot ResearchSnapshot) ([]s
 	if decision.Status != "conditional" || decision.Mode == "short_term" {
 		decision.PricePlan = nil
 	}
+	if p := decision.PricePlan; p != nil && p.EntryAnchor == "" && p.StopAnchor == "" && p.TargetAnchor == "" && strings.TrimSpace(p.Reason) == "" && len(p.SourceIDs) == 0 {
+		decision.PricePlan = nil
+	}
 	if decision.PricePlan != nil {
 		problem := validateAnchoredPlan(*decision.PricePlan, snapshot)
 		if problem != "" {
 			notes = append(notes, problem)
 			decision.PricePlan = nil
 			decision.Status = "no_plan"
-			decision.Reason = "价格依据校验未通过：" + problem
+			decision.Blockers = append(decision.Blockers, "价格依据校验未通过："+problem)
 			decision.NewPosition = "暂不形成新仓计划，等待补充依据"
 			decision.ExistingPosition = "价格方案未通过校验，不沿用其持有或止损结论；需重新核实已有仓位风险"
 		}
 	}
 	if decision.Status == "no_plan" {
 		decision.PricePlan = nil
-		if originalStatus != "no_plan" {
-			decision.Reason = "证据、行情时效或失效条件不足，原条件化计划未通过校验"
+		if len(decision.Blockers) > 0 {
+			decision.Reason = truncateExactText(strings.Join(decision.Blockers, "；"), 500)
+			notes = append(notes, decision.Blockers...)
+		}
+		if originalStatus != "no_plan" || len(decision.Blockers) > 0 {
 			decision.ExistingPosition = "暂不沿用原计划的加仓、持有或止损判断；需要补齐资料后重新评估已有仓位风险"
 		}
 		decision.NewPosition = "暂不形成新仓计划；" + decision.Reason
 	}
 	return uniqueStrings(notes, 12), nil
+}
+
+func researchClaimHasPrimaryEvidence(claim ResearchClaim, sources map[string]ResearchSource) bool {
+	for _, id := range claim.SourceIDs {
+		s := sources[id]
+		if s.Kind == "disclosure" || s.Kind == "company_profile" || s.Kind == "calculation" || (s.Kind == "announcement" && ResearchSourceHasBody(s)) {
+			return true
+		}
+	}
+	return false
 }
 
 // Models occasionally drop or alter one character while copying a long source
@@ -495,8 +527,20 @@ func researchPricesStale(snapshot ResearchSnapshot) bool {
 	if len(snapshot.DailyBars) == 0 {
 		return true
 	}
-	day, err := time.Parse("2006-01-02", snapshot.DailyBars[len(snapshot.DailyBars)-1].Date)
-	return err != nil || snapshot.CutoffAt.Sub(day) > 5*24*time.Hour || day.After(snapshot.CutoffAt)
+	lag, valid := foundation.AStockSessionLag(snapshot.DailyBars[len(snapshot.DailyBars)-1].Date, snapshot.CutoffAt)
+	return !valid || lag > 5
+}
+
+func researchPriceFreshnessReason(snapshot ResearchSnapshot) string {
+	if len(snapshot.DailyBars) == 0 {
+		return "缺少日线行情，不能形成交易计划"
+	}
+	date := snapshot.DailyBars[len(snapshot.DailyBars)-1].Date
+	_, valid := foundation.AStockSessionLag(date, snapshot.CutoffAt)
+	if !valid {
+		return "日线日期无效或晚于分析时点，不能形成交易计划"
+	}
+	return fmt.Sprintf("日线截至%s，落后最近已完成交易日%s超过5个交易日（不计休市日），需更新行情后制定交易计划", date, foundation.LatestCompletedAStockSession(snapshot.CutoffAt).Format("2006-01-02"))
 }
 
 // A quantitative snapshot is useful while AI runs, but is not a completed plan.
@@ -519,8 +563,7 @@ func validateAnchoredPlan(plan AnchoredPricePlan, snapshot ResearchSnapshot) str
 		return "历史样本不足20日"
 	}
 	last := snapshot.DailyBars[len(snapshot.DailyBars)-1]
-	day, err := time.Parse("2006-01-02", last.Date)
-	if err != nil || snapshot.CutoffAt.Sub(day) > 5*24*time.Hour {
+	if researchPricesStale(snapshot) {
 		return "日线时效不足"
 	}
 	anchors := map[string]PriceAnchor{}

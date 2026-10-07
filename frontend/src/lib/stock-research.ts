@@ -13,8 +13,8 @@ export type ResearchReport = {
 	headline: string; thesis: ResearchClaim; support: ResearchClaim[]; counter: ResearchClaim[]; alternatives: ResearchClaim[];
 	main_conflict: string; evidence_level: string; evidence_reasons?: string[]; limitations: string[]; conditions: ResearchCondition[]; invalidation_ids: string[];
 	scenarios: ResearchScenario[];
-	decision: { status: string; mode: string; horizon: string; new_position: string; existing_position: string; reason: string; price_plan?: { entry_anchor: string; stop_anchor: string; target_anchor?: string; reason: string; source_ids: string[] } | null };
-	baseline_relation: string; baseline_reason: string; snapshot_id: string; snapshot_version: number; prompt_version: string;
+	decision: { status: string; mode: string; horizon: string; new_position: string; existing_position: string; reason: string; blockers?: string[]; price_plan?: { entry_anchor: string; stop_anchor: string; target_anchor?: string; reason: string; source_ids: string[] } | null };
+	baseline_relation: string; baseline_reason: string; snapshot_id: string; snapshot_version: number; prompt_version: string; validation_version?: string;
 	request: ResearchRequest; model: string; generated_at: string; cutoff_at: string; sources: ResearchSource[];
 	analysis_level?: ResearchAnalysisLevel;
 	anchors: Array<{ id: string; label: string; price: number; source_id: string; as_of: string }>;
@@ -24,7 +24,8 @@ export type ResearchReport = {
 	validation: string; validation_notes: string[];
 };
 export type ResearchVerification = { checked_at: string; baseline_at: string; source: string; summary: string; checks: Array<{ condition_id: string; status: string; observed?: number; as_of?: string; detail: string }> };
-export type ResearchJob = { id: string; request: ResearchRequest; status: string; stage: string; message: string; error?: string; started_at: string; updated_at: string; completed_at?: string; analysis?: StockAIAnalysis; verification?: ResearchVerification; resume_available?: boolean; resumed_from?: string };
+export type ResearchBudget = { response_timeout_seconds: number; stage_timeout_seconds: number; total_timeout_seconds: number; reasoning_effort?: string };
+export type ResearchJob = { id: string; request: ResearchRequest; status: string; stage: string; message: string; error?: string; started_at: string; updated_at: string; completed_at?: string; analysis?: StockAIAnalysis; verification?: ResearchVerification; resume_available?: boolean; resumed_from?: string; budget?: ResearchBudget };
 export type ResearchJobSummary = Pick<ResearchJob, 'id' | 'request' | 'status' | 'stage' | 'message' | 'started_at' | 'updated_at'> & { name: string; headline: string; score: number };
 
 export const isResearchRunning = (job?: Pick<ResearchJob, 'status'> | null) => !!job && (job.status === 'queued' || job.status === 'running');

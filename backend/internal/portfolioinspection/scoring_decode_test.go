@@ -5,11 +5,62 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestNamedDimensionsAreLosslessAndRejectAmbiguousKeys(t *testing.T) {
+	req, results, metrics, _ := scoreFixture()
+	raw := scoreJSON(t)
+	array := raw["dimensions"].([]any)
+	keyed := map[string]any{}
+	for _, value := range array {
+		d := value.(map[string]any)
+		key := d["key"].(string)
+		delete(d, "key")
+		keyed[key] = d
+	}
+	raw["dimensions"] = keyed
+	decoded, err := decodeScoringReport(scoreContent(t, raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateScoringReport(&decoded, req, results, metrics); err != nil {
+		t.Fatal(err)
+	}
+	expected, err := decodeScoringReport(scoreContent(t, scoreJSON(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateScoringReport(&expected, req, results, metrics); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(decoded.Dimensions, expected.Dimensions) || *decoded.TotalScore != *expected.TotalScore {
+		t.Fatal("container normalization changed scores or references", decoded.Dimensions)
+	}
+	for _, mode := range []string{"missing", "unknown", "conflicting"} {
+		t.Run(mode, func(t *testing.T) {
+			var changed map[string]any
+			_ = json.Unmarshal([]byte(scoreContent(t, raw)), &changed)
+			dims := changed["dimensions"].(map[string]any)
+			switch mode {
+			case "missing":
+				delete(dims, "holding_logic")
+			case "unknown":
+				dims["unknown"] = dims["holding_logic"]
+				delete(dims, "holding_logic")
+			case "conflicting":
+				dims["holding_logic"].(map[string]any)["key"] = "risk_capacity"
+			}
+			if _, err := decodeScoringReport(scoreContent(t, changed)); err == nil {
+				t.Fatal("ambiguous dimension keys accepted")
+			}
+		})
+	}
+}
 
 func scoreJSON(t *testing.T) map[string]any {
 	t.Helper()
@@ -86,6 +137,23 @@ func TestScoringRejectsInvalidExplanationShapes(t *testing.T) {
 	raw["dimensions"].([]any)[0].(map[string]any)["score"] = "70"
 	if _, err := decodeScoringReport(scoreContent(t, raw)); err == nil {
 		t.Fatal("string score accepted")
+	}
+}
+
+func TestSingleNarrativeLimitPreservesTextAndScore(t *testing.T) {
+	req, results, metrics, _ := scoreFixture()
+	raw := scoreJSON(t)
+	raw["data_limitations"] = "原始资料限制"
+	raw["dimensions"].([]any)[3].(map[string]any)["limitations"] = "现金约束仍在"
+	r, err := decodeScoringReport(scoreContent(t, raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = validateScoringReport(&r, req, results, metrics); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Dimensions[3].Limitations) != 1 || r.Dimensions[3].Limitations[0] != "现金约束仍在" || r.DataLimitations[0] != "原始资料限制" || *r.TotalScore != 71 {
+		t.Fatal("single narrative normalization changed content", r)
 	}
 }
 

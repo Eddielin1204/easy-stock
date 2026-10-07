@@ -8,30 +8,31 @@ import (
 )
 
 type Input struct {
-	Symbol             string
-	Quote              foundation.Quote
-	KLines             []foundation.KLine
-	BenchmarkSymbol    string
-	BenchmarkName      string
-	BenchmarkKLines    []foundation.KLine
-	LimitUps           []foundation.LimitUpEvent
-	Catalog            []foundation.StockCatalogEntry
-	Concepts           []string
-	Industry           string
-	Business           string
-	BusinessDetail     string
-	BusinessSource     string
-	Fundamentals       *foundation.StockFundamentals
-	FinancialHistory   []foundation.StockFundamentals
-	Reports            []foundation.MarketResearchItem
-	Announcements      []foundation.MarketResearchItem
-	ModelThemeEvidence []ThemeEvidence
-	CachedThemes       []foundation.StockThemeAttribution
-	Themes             []foundation.ThemeOverview
-	ResearchPeers      ResearchPeerGroup
-	MarketEmotion      *marketemotion.Snapshot
-	News               []foundation.NewsItem
-	CollectionGaps     []string
+	Symbol              string
+	Quote               foundation.Quote
+	KLines              []foundation.KLine
+	BenchmarkSymbol     string
+	BenchmarkName       string
+	BenchmarkKLines     []foundation.KLine
+	LimitUps            []foundation.LimitUpEvent
+	Catalog             []foundation.StockCatalogEntry
+	Concepts            []string
+	Industry            string
+	Business            string
+	BusinessDetail      string
+	BusinessSource      string
+	Fundamentals        *foundation.StockFundamentals
+	FinancialHistory    []foundation.StockFundamentals
+	FinancialSupplement []foundation.StockFinancialEvidence
+	Reports             []foundation.MarketResearchItem
+	Announcements       []foundation.MarketResearchItem
+	ModelThemeEvidence  []ThemeEvidence
+	CachedThemes        []foundation.StockThemeAttribution
+	Themes              []foundation.ThemeOverview
+	ResearchPeers       ResearchPeerGroup
+	MarketEmotion       *marketemotion.Snapshot
+	News                []foundation.NewsItem
+	CollectionGaps      []string
 }
 
 type Analysis struct {

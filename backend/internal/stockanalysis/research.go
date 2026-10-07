@@ -64,6 +64,7 @@ func ResearchSynthesisPrompt(snapshot ResearchSnapshot, request ResearchRequest,
 }
 
 const researchAssessmentRules = `证据充分度只评价输入能否支持本次限定范围的核心判断：sufficient表示关键论据已核实，limited表示仍有可能改变判断的具体事实待核实，insufficient表示核心判断缺少基本依据。不得仅因没有次日数据、资金流或单季数据等通用限制一律标为limited；如果主判断涉及这些事实才将其作为关键缺口。limitations只列最终仍未解决的具体缺口；initial_missing_facts是补证前的待核实事项，补证后必须重新判断，已解决的不要沿用。公告片段的省略号表示原文有省略，不能据此声称原文没有披露。
+分别评价公司财务/业务依据、盘面归因与交易执行条件。已披露财务及可复算量价可支持其限定结论，不要求同时引用异动当天公告；没有新公告、细分共振或未来季度数据，不自动否定已核实事实。新订单、客户量产等事件若仍只有新闻摘要，继续标明待公司原文核实。行情时效按已完成交易日判断，休市日不计入；真正行情过期只限制当前交易计划，不否定已有财务事实。
 先核对输入是否已包含公司调研纪要、产品进展或经营说明，不能一边引用这些原文一边写“未见纪要”。行情trade_time在15:00之后不能称为盘中值，same_date_daily_close是同日期日线交叉对照；快照时间和收盘是否可确认须分别判断。
 `
 
@@ -253,7 +254,7 @@ func RunResearch(ctx context.Context, prompter agent.Prompter, snapshot *Researc
 	}
 	result.Decision.Horizon = request.Horizon
 	progress("validating", "正在核对证据引用、条件和价格依据")
-	report := ResearchReport{Runtime: agent.BoundRuntime(ctx), ResearchSynthesis: result, SnapshotID: snapshot.ID, SnapshotVersion: snapshot.Version, PromptVersion: ResearchPromptVersion, Request: request, AnalysisLevel: level, Model: model, GeneratedAt: time.Now().UTC(), CutoffAt: snapshot.CutoffAt, Sources: snapshot.Sources, Anchors: snapshot.Anchors, Questions: outline.Questions, Attempts: attempts, Compression: compressionFromPack(tradePack), Validation: "references_checked", ValidationNotes: notes}
+	report := ResearchReport{Runtime: agent.BoundRuntime(ctx), ResearchSynthesis: result, SnapshotID: snapshot.ID, SnapshotVersion: snapshot.Version, PromptVersion: ResearchPromptVersion, Request: request, AnalysisLevel: level, Model: model, GeneratedAt: time.Now().UTC(), CutoffAt: snapshot.CutoffAt, Sources: snapshot.Sources, Anchors: snapshot.Anchors, Questions: outline.Questions, Attempts: attempts, Compression: compressionFromPack(tradePack), Validation: "references_checked", ValidationVersion: ResearchValidationVersion, ValidationNotes: notes}
 	ApplyResearch(analysis, &report, *snapshot)
 	return nil
 }
@@ -301,7 +302,7 @@ func runQuickResearch(ctx context.Context, prompter agent.Prompter, snapshot *Re
 	if err != nil {
 		return fmt.Errorf("AI快速研判未通过证据结构校验：%w", err)
 	}
-	report := ResearchReport{Runtime: agent.BoundRuntime(ctx), ResearchSynthesis: result, SnapshotID: snapshot.ID, SnapshotVersion: snapshot.Version, PromptVersion: ResearchPromptVersion, Request: request, AnalysisLevel: request.AnalysisLevel, Model: model, GeneratedAt: time.Now().UTC(), CutoffAt: snapshot.CutoffAt, Sources: snapshot.Sources, Anchors: snapshot.Anchors, Questions: []ResearchQuestion{}, Attempts: attempts, Compression: compressionFromPack(pack), Validation: "references_checked", ValidationNotes: notes}
+	report := ResearchReport{Runtime: agent.BoundRuntime(ctx), ResearchSynthesis: result, SnapshotID: snapshot.ID, SnapshotVersion: snapshot.Version, PromptVersion: ResearchPromptVersion, Request: request, AnalysisLevel: request.AnalysisLevel, Model: model, GeneratedAt: time.Now().UTC(), CutoffAt: snapshot.CutoffAt, Sources: snapshot.Sources, Anchors: snapshot.Anchors, Questions: []ResearchQuestion{}, Attempts: attempts, Compression: compressionFromPack(pack), Validation: "references_checked", ValidationVersion: ResearchValidationVersion, ValidationNotes: notes}
 	ApplyResearch(analysis, &report, *snapshot)
 	return nil
 }
@@ -363,10 +364,25 @@ func runStandardResearch(ctx context.Context, prompter agent.Prompter, snapshot 
 	}
 	result := ResearchSynthesis{TradingLogic: core.TradingLogic, Headline: core.Headline, Thesis: core.Thesis, Support: core.Support, Counter: core.Counter, Alternatives: core.Alternatives, MainConflict: core.MainConflict, EvidenceLevel: core.EvidenceLevel, Limitations: core.Limitations, BaselineRelation: core.BaselineRelation, BaselineReason: core.BaselineReason, Conditions: trade.Conditions, InvalidationIDs: trade.InvalidationIDs, Scenarios: trade.Scenarios, Decision: trade.Decision}
 	notes, err := validateRequestedResearch(&result, *snapshot, request)
+	if err != nil && ctx.Err() == nil && !repairUsed {
+		repairUsed = true
+		if cp != nil {
+			cp.RepairUsed = true
+		}
+		progress("validating", "正在修复标准研判的引用或交易条件")
+		pack := buildResearchEvidencePack(*snapshot, request, researchPromptSynthesis, &outline)
+		repairPrompt := researchSynthesisPromptWithPack(*snapshot, request, outline, pack) + "\n[结构修复要求]\n上次拆分结果未通过校验：" + truncateExactText(err.Error(), 500) + "。保留已有研究判断和证据编号，修复不合法字段，重发完整JSON；证据不足选择no_plan。"
+		previous, _ := json.Marshal(result)
+		repairPrompt += "\n[上次拆分结果，仅用于修复字段，不作为新证据]\n" + string(previous)
+		result, err = promptResearchJSON[ResearchSynthesis](ctx, prompter, repairPrompt, "研究结构修复", options("repair"), cp, snapshot)
+		if err == nil {
+			notes, err = validateRequestedResearch(&result, *snapshot, request)
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("AI标准研判未通过证据结构校验：%w", err)
 	}
-	report := ResearchReport{Runtime: agent.BoundRuntime(ctx), ResearchSynthesis: result, SnapshotID: snapshot.ID, SnapshotVersion: snapshot.Version, PromptVersion: ResearchPromptVersion, Request: request, AnalysisLevel: request.AnalysisLevel, Model: model, GeneratedAt: time.Now().UTC(), CutoffAt: snapshot.CutoffAt, Sources: snapshot.Sources, Anchors: snapshot.Anchors, Questions: []ResearchQuestion{}, Attempts: attempts, Compression: compressionFromPack(tradePack), Validation: "references_checked", ValidationNotes: notes}
+	report := ResearchReport{Runtime: agent.BoundRuntime(ctx), ResearchSynthesis: result, SnapshotID: snapshot.ID, SnapshotVersion: snapshot.Version, PromptVersion: ResearchPromptVersion, Request: request, AnalysisLevel: request.AnalysisLevel, Model: model, GeneratedAt: time.Now().UTC(), CutoffAt: snapshot.CutoffAt, Sources: snapshot.Sources, Anchors: snapshot.Anchors, Questions: []ResearchQuestion{}, Attempts: attempts, Compression: compressionFromPack(tradePack), Validation: "references_checked", ValidationVersion: ResearchValidationVersion, ValidationNotes: notes}
 	ApplyResearch(analysis, &report, *snapshot)
 	return nil
 }

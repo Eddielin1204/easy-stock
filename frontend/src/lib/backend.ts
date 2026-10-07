@@ -284,6 +284,8 @@ export type SourceMeta = {
 };
 
 export type Quote = {
+ volume?: number;
+ amount?: number;
   symbol: string;
   name: string;
   price: number;
@@ -1061,6 +1063,7 @@ export type PortfolioProfileRules = {
 };
 
 export type PortfolioResearchRequest = {
+ source_optimization_id?: string;
  trader_profile: PortfolioTraderProfile;
  holdings: PortfolioHolding[];
  horizon?: 'short' | 'swing' | 'medium';
@@ -2058,3 +2061,56 @@ function normalizeConfig(config: BackendConfig): BackendConfig {
     token: config.token || '',
   };
 }
+
+export type PortfolioOptimizationAllocation = {
+ symbol: string; min_weight: number; max_weight: number; preferred_weight: number;
+ reason: string; funding_reason: string; suitable_for_increase: boolean; suitability_reason: string;
+ confirmation_ids: string[]; invalidation_ids: string[]; evidence_refs: PortfolioEvidenceRef[];
+ investment?: {role:string;action:'allocate'|'hold'|'wait'|'reduce';horizon:string;business:string;growth:string;valuation:string;timing:string;portfolio_fit:string;risk:string;exit:string;opportunity_cost:string;prior_opinion:string;period_suitability:string};
+ allocation_conditions?: Array<{kind:'entry'|'exit';text:string;verification:string;status:'pending';anchor_id?:string;operator?:string;threshold?:number;evidence_refs:PortfolioEvidenceRef[]}>;
+};
+export type PortfolioOptimizationChecks = {
+ valid: boolean; total_position_percent: number; cash_percent: number; sold_percent: number;
+ bought_percent: number; retained_percent: number; replacement_ratio_percent: number;
+ maximum_replacement_ratio_percent: number; change_budget_mode: string; errors: string[];
+};
+export type PortfolioOptimizationPlan = {
+ rejection_reasons?: string[];
+ risk_checks?: Array<{name:string;symbols?:string[];before_percent:number;after_percent:number;limit_percent?:number;hard:boolean;passed:boolean;basis:string}>;
+ allocation_search?: { method:string; evaluated_allocations:number; profitable_weight_percent:number; deducted_loss_weight_percent:number; volatility_proxy_percent:number };
+ name: string; status: string; target: PortfolioHolding[]; checks: PortfolioOptimizationChecks;
+ trade_sold_percent?: number; trade_bought_percent?: number; funding?: Array<{from_symbol:string;to_symbol:string;weight_percent:number}>;
+ allocations: PortfolioOptimizationAllocation[];
+ improvements: Array<{ issue: string; metric: string; before: number; after: number;kind?:string;from_symbol?:string;to_symbol?:string;weight_percent?:number;reason?:string;tradeoff?:string;evidence_refs?:PortfolioEvidenceRef[] }>;
+ original_comparison: PortfolioInspectionReport; target_comparison: PortfolioInspectionReport;
+ assessment?: { accepted: boolean; preferred_configuration?: 'a'|'b'|'neither'; reason: string; original_issue: string; tradeoffs: string[]; residual_risks: string[]; evidence_refs: PortfolioEvidenceRef[];investment_comparisons?:Array<{preferred_symbol:string;other_symbol:string;dimension:string;reason:string;tradeoff:string;evidence_refs:PortfolioEvidenceRef[]}> };
+ assessment_order: string; error?: string;
+};
+export type PortfolioOptimizationJob = {
+ id: string; source_id: string; root_source_id: string; baseline: PortfolioHolding[];
+ baseline_fingerprint: string; fingerprint: string; version: string; source_report: PortfolioInspectionReport;
+ status: string; stage: string; message: string; error?: string; resume_available: boolean;
+ started_at: string; updated_at: string; completed_at?: string; snapshot_at?: string;
+ latest_trade_date?: string; union_facts?: Record<string,PortfolioFact>; model?: string; model_duration_ms: number;
+ model_prompt_bytes?: number; model_prompt_version?: string; model_stage_duration_ms?: Record<string,number>;
+ reused_stocks: number; new_stocks: number; outcome?: string; outcome_reason?: string; selected_plan?: number;
+ completed_research?: number; total_research?: number;
+ portfolio_needs?:string[];
+ revision_count?:number;
+ proposal?: {range_adjustments?:Array<{symbol:string;min_weight:number;max_weight:number;reason:string}>;range_bound_corrections?:string[]};
+ revision_history?: Array<{round:number;name:string;target:PortfolioHolding[];conclusion:PortfolioInspectionReport['conclusion'];assessment?:PortfolioOptimizationPlan['assessment'];checks:PortfolioOptimizationChecks;error:string}>;
+ model_progress?: {elapsed_ms:number; text_bytes:number; reasoning_bytes:number; retry_count:number; event?:string};
+ model_attempts?: Array<{stage:string; round?:number; duration_ms:number; prompt_bytes:number; response_bytes:number; budget_ms?:number; prompt_version?:string; error?:string; progress:{elapsed_ms:number; text_bytes:number; reasoning_bytes:number; retry_count:number}}>;
+ screening_audit?: {checked:number;qualified:number;retained:number;diverse:number;check_limit:number;budget_ms:number;duration_ms:number;stop_reason:string;records?:Array<{symbol:string;name:string;industry:string;qualified:boolean;reason:string}>};
+ candidates: Array<{ symbol: string; name: string; source: string; reason: string; selected: boolean; industry_group?:string;portfolio_fit_bonus?:number;portfolio_fit_reason?:string; screening?: {
+  qualified: boolean; score: number; industry: { name: string; reason: string; five_day_percent: number; twenty_day_percent: number };
+  completed_session: string; recent_return_percent?: number; return_sessions: number; growth_kind?: string;
+  revenue_yoy?: number; previous_revenue_yoy?: number; financial_reports?: string[]; financial_method: string;
+  deducted_profit_share?:number; profit_quality_bonus?:number;
+  valuation_reason?:string; valuation?:{symbol:string;pe_ttm?:number;pb?:number;trade_time:string;meta:{source:string}};
+  reasons: string[];
+ } }>;
+
+ eligibility: Array<{ symbol: string; can_increase: boolean; locked: boolean; conditional: boolean; reason: string; trade_date: string; quote_trade_date?: string; liquidity_trade_date?: string; liquidity_source?: string; missing_fields?: string[]; volume?: number; amount?: number }>;
+ results: PortfolioHoldingResult[]; plans: PortfolioOptimizationPlan[]; limitations: string[];
+};

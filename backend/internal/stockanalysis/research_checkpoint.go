@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"easy-stock/backend/internal/agent"
+	"easy-stock/backend/internal/runtimelog"
 )
 
 // Parsed intermediate JSON is private, unvalidated working state. It never
@@ -100,11 +101,27 @@ func (cp *ResearchCheckpoint) resumable() bool {
 
 func promptResearchJSON[T any](ctx context.Context, prompter agent.Prompter, prompt, label string, options promptJSONObjectOptions, cp *ResearchCheckpoint, snapshot *ResearchSnapshot) (T, error) {
 	var decoded T
+	options.validate = func(value any) error { return validateResearchStage(value, *snapshot, label) }
+	var err error
 	if cp != nil {
 		if output, ok := cp.Outputs[label]; ok && output.PromptHash == researchHash(prompt) {
-			if err := json.Unmarshal(output.Value, &decoded); err == nil {
+			cacheErr := json.Unmarshal(output.Value, &decoded)
+			if cacheErr == nil {
+				cacheErr = options.validate(&decoded)
+			}
+			if cacheErr == nil {
 				return decoded, nil
 			}
+			// Old code could cache an empty core as a successful stage. Do not
+			// reuse its downstream trade output or silently restart its budget.
+			err = &invalidJSONResponseError{label: label, cause: fmt.Errorf("已保存%s无效：%w", label, cacheErr), content: runtimelog.Redact(truncateExactText(string(output.Value), 8_000))}
+			delete(cp.Outputs, label)
+			if label == "核心判断" || label == "核心判断修复" {
+				for _, dependent := range []string{"核心判断修复", "交易条件", "交易条件修复", "研究结构修复"} {
+					delete(cp.Outputs, dependent)
+				}
+			}
+			decoded = *new(T)
 		}
 		original := options.onAttempt
 		options.onAttempt = func(a promptJSONAttempt) {
@@ -114,7 +131,9 @@ func promptResearchJSON[T any](ctx context.Context, prompter agent.Prompter, pro
 			}
 		}
 	}
-	decoded, err := promptJSONObjectWithOptions[T](ctx, prompter, prompt, label, options)
+	if err == nil {
+		decoded, err = promptJSONObjectWithOptions[T](ctx, prompter, prompt, label, options)
+	}
 	if cp != nil && err != nil {
 		var invalid *invalidJSONResponseError
 		if errors.As(err, &invalid) {

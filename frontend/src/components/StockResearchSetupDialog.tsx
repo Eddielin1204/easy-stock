@@ -5,9 +5,9 @@ import { StockResearchOptions } from './StockResearchReport';
 
 const researchLevelOptions: Array<{ value: ResearchAnalysisLevel; title: string; description: string; coverage: string; tokens: string; time: string }> = [
 	{ value: 'quantitative', title: '量化速览', description: '只使用本地行情与规则计算，不调用 AI。', coverage: '无 AI 判断', tokens: '0 Token', time: '10～45 秒' },
-	{ value: 'quick', title: 'AI 快速研判', description: '用少量核心数据快速形成初步判断，不生成交易计划。', coverage: '基础覆盖', tokens: '约 2,000～6,000', time: '1～3 分钟' },
-	{ value: 'standard', title: 'AI 标准研判', description: '压缩行情与公告，分别生成核心判断和交易条件。', coverage: '中等覆盖', tokens: '约 6,000～16,000', time: '2～6 分钟' },
-	{ value: 'deep', title: 'AI 深度研究', description: '完整执行证据核验、核心判断和交易条件。', coverage: '最高覆盖', tokens: '约 20,000～50,000', time: '3～24 分钟' },
+	{ value: 'quick', title: 'AI 快速研判', description: '用少量核心数据快速形成初步判断，不生成交易计划。', coverage: '基础覆盖', tokens: '约 2,000～6,000', time: '通常 1～6 分钟' },
+	{ value: 'standard', title: 'AI 标准研判', description: '压缩行情与公告，分别生成核心判断和交易条件。', coverage: '中等覆盖', tokens: '约 6,000～16,000', time: '通常 2～12 分钟' },
+	{ value: 'deep', title: 'AI 深度研究', description: '完整执行证据核验、核心判断和交易条件。', coverage: '最高覆盖', tokens: '约 20,000～50,000', time: '通常 3～30 分钟' },
 ];
 
 export type ResearchSetupOptions = {
@@ -79,7 +79,7 @@ export function StockResearchSetupDialog({ symbol, initialOptions, onCancel, onC
 						<span className="stock-ai-level-meta"><small>{option.coverage}</small><small>{option.tokens} · {option.time}</small></span>
 					</button>)}
 				</div>
-				<p className="stock-ai-level-note">Token 和耗时为估算值，实际结果取决于当前模型、思考等级、数据量和上游服务响应。级别越高表示证据覆盖更广，不代表绝对准确或收益确定。</p>
+				<p className="stock-ai-level-note">Token 和耗时为估算值，较高思考档位可能耗时更长。时间上限会适配当前模型设置，并在研究过程中显示；排队不占用执行时间。级别越高表示证据覆盖更广，不代表绝对准确或收益确定。</p>
 			</>}
 			<footer><button type="button" className="secondary" onClick={step === 'purpose' ? onCancel : () => setStep('purpose')}>{step === 'purpose' ? '取消' : <><ChevronLeft size={14} />上一步</>}</button><button type="button" onClick={step === 'purpose' ? next : () => onConfirm(options)}>{step === 'purpose' ? <>下一步<ChevronRight size={14} /></> : <><Sparkles size={14} />开始分析</>}</button></footer>
 		</section>

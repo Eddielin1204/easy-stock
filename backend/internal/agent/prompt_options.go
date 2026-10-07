@@ -34,6 +34,9 @@ type PromptOptions struct {
 	DisableTools     bool
 	Toolsets         []string
 	BrowserStatePath string
+	// Cap supported numeric effort levels for a bounded structured task. Empty
+	// inherits the user's setting; toggles and unknown capabilities are unchanged.
+	ReasoningEffortCap string
 	// Zero leaves timing to the caller. Only actual model output resets idle time.
 	FirstResponseTimeout time.Duration
 	IdleTimeout          time.Duration
@@ -122,6 +125,10 @@ func (r *HermesRuntime) preparePromptSandbox(options PromptOptions) (*promptSand
 		return fail(err)
 	}
 	sandboxConfig := minimalSandboxConfig(baseConfig, workDir)
+	if options.ReasoningEffortCap != "" {
+		capability := r.reasoningCapability(reasoningLLM(baseConfig))
+		r.applyReasoning(sandboxConfig, reasoningLLM(baseConfig), cappedReasoningEffort(storedReasoningEffort(baseConfig), options.ReasoningEffortCap, capability))
+	}
 	configData, err := yaml.Marshal(sandboxConfig)
 	if err != nil {
 		return fail(fmt.Errorf("编码 Hermes 沙箱配置: %w", err))

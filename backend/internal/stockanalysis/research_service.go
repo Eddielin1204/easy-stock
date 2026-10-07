@@ -13,6 +13,7 @@ var ErrResearchBusy = errors.New("研究任务已达并发上限，请稍后再�
 
 type ResearchPublisher func(string, string, *Analysis, *ResearchSnapshot) error
 type ResearchRunner func(context.Context, ResearchRequest, ResearchPublisher) (Analysis, *ResearchSnapshot, error)
+type ResearchPreparation func(context.Context, ResearchRequest) (context.Context, ResearchBudget, func(), error)
 type activeResearch struct {
 	id     string
 	symbol string
@@ -22,6 +23,7 @@ type activeResearch struct {
 type ResearchService struct {
 	store               *ResearchStore
 	run                 ResearchRunner
+	prepare             ResearchPreparation
 	mu                  sync.Mutex
 	active              map[string]activeResearch
 	workers             chan struct{}
@@ -32,7 +34,11 @@ type ResearchService struct {
 }
 
 func NewResearchService(store *ResearchStore, run ResearchRunner, onComplete ...func(ResearchJob)) *ResearchService {
-	s := &ResearchService{store: store, run: run, active: map[string]activeResearch{}, workers: make(chan struct{}, 2)}
+	return NewResearchServiceWithPreparation(store, run, nil, onComplete...)
+}
+
+func NewResearchServiceWithPreparation(store *ResearchStore, run ResearchRunner, prepare ResearchPreparation, onComplete ...func(ResearchJob)) *ResearchService {
+	s := &ResearchService{store: store, run: run, prepare: prepare, active: map[string]activeResearch{}, workers: make(chan struct{}, 2)}
 	if len(onComplete) > 0 {
 		s.onComplete = onComplete[0]
 	}
@@ -99,18 +105,37 @@ func (s *ResearchService) startLocked(ctx context.Context, request ResearchReque
 		job.ResumedFrom = resume.ID
 		job.Message = "继续已保存的研究阶段"
 	}
+	runCtx, cancel := context.WithCancel(context.Background())
+	budget := ResearchBudgetFor(request, 0, "")
+	release := func() {}
+	if s.prepare != nil {
+		var err error
+		runCtx, budget, release, err = s.prepare(runCtx, request)
+		if err != nil {
+			cancel()
+			if release != nil {
+				release()
+			}
+			return job, err
+		}
+	}
+	job.Budget = &budget
 	if err := s.store.Save(ctx, job); err != nil {
+		cancel()
+		release()
 		return job, err
 	}
-	runCtx, cancel := context.WithTimeout(context.Background(), ResearchTotalTimeout(request))
 	s.active[key] = activeResearch{id: job.ID, symbol: request.Symbol, cancel: cancel}
 	s.wg.Add(1)
-	go s.execute(runCtx, key, job)
+	go func() {
+		defer s.wg.Done()
+		defer release()
+		s.execute(runCtx, key, job)
+	}()
 	return job, nil
 }
 
 func (s *ResearchService) execute(ctx context.Context, key string, job ResearchJob) {
-	defer s.wg.Done()
 	defer func() {
 		s.mu.Lock()
 		if item, ok := s.active[key]; ok && item.id == job.ID {
@@ -152,6 +177,11 @@ func (s *ResearchService) execute(ctx context.Context, key string, job ResearchJ
 	var err error
 	select {
 	case s.workers <- struct{}{}:
+		// Queued work retains cancellation and its frozen model, but starts
+		// spending the execution budget only after acquiring a worker.
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(WithResearchBudget(ctx, *job.Budget), job.Budget.TotalTimeout())
+		defer cancel()
 		func() {
 			defer func() { <-s.workers }()
 			defer func() {
@@ -181,7 +211,7 @@ func (s *ResearchService) execute(ctx context.Context, key string, job ResearchJ
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		job.Status = "failed"
 		job.Stage = "failed"
-		job.Error = fmt.Sprintf("研究超过%s总时限", formatResearchDuration(ResearchTotalTimeout(job.Request)))
+		job.Error = fmt.Sprintf("研究超过%s执行时限", formatResearchDuration(job.Budget.TotalTimeout()))
 		job.Message = "研究超时，保留已完成的数据"
 	} else if ctx.Err() != nil {
 		job.Status = "cancelled"

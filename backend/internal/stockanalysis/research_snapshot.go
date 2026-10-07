@@ -102,9 +102,20 @@ func BuildResearchSnapshot(input Input, analysis Analysis, cutoff time.Time) Res
 	}, lastDate)
 	addMetric("m-quote", "行情快照（不等于收盘价）", analysis.Quote, analysis.Quote.TradeTime.Format(time.RFC3339))
 	financials := researchFinancialHistory(input, cutoff)
+	financialSupplement := financialEvidenceAt(input.FinancialSupplement, snapshot.Symbol, cutoff)
+	if len(financials) == 0 {
+		financials = FinancialFallback(financialSupplement, snapshot.Symbol, cutoff)
+	}
 	if len(financials) > 0 {
 		latest := financials[0]
-		encoded, _ := json.Marshal(map[string]any{"data": latest, "history": financials, "definitions": map[string]string{"revenue": "营业总收入（并非营业收入）", "net_profit": "归属于母公司股东的净利润", "deducted_net_profit": "扣除非经常性损益后的归母净利润", "period": "各报告期均为年初至报告期末累计值；不同长度累计值不能直接比较环比，同年相邻累计营收/利润之差才可计算单季值，比率与每股现金流不能相减", "operating_cash_flow_per_share": "每股经营现金流，不能直接当作现金流总额"}})
+		checks := financialCrossChecks(financials, financialSupplement)
+		modelRows := financialModelRows(financials, financialSupplement)
+		encoded, _ := json.Marshal(map[string]any{"data": modelRows[0], "history": modelRows, "supplemental_history": financialSupplement, "cross_checks": checks, "definitions": map[string]string{"revenue": "营业总收入（并非营业收入）", "net_profit": "归属于母公司股东的净利润", "deducted_net_profit": "扣除非经常性损益后的归母净利润", "period": "各报告期均为年初至报告期末累计值；同年相邻累计营收/利润之差才可计算单季值，单季同比须有上年同季对应的两个累计报告期，比率与每股现金流不能相减", "operating_cash_flow_per_share": "每股经营现金流，不能直接当作现金流总额", "supplement": "东财与新浪分别标记来源；只交叉核对相同报告期、同单位字段，两网站可能转录同一披露，不算独立经营证据；冲突不得择优或平均，保留待核实"}})
+		for _, check := range checks {
+			if fields := check["conflicting_fields"].([]string); len(fields) > 0 {
+				snapshot.Limitations = append(snapshot.Limitations, fmt.Sprintf("财务来源在%s的%s存在数值冲突，保留两源数值，需核对公司原始披露", check["report_date"], strings.Join(fields, "、")))
+			}
+		}
 		snapshot.Sources = append(snapshot.Sources, ResearchSource{ID: "f-financial", Kind: "disclosure", Title: "财务披露快照（累计口径，金额为元）",
 			Content: string(encoded), Provider: latest.Meta.Source, CapturedAt: snapshot.CapturedAt, PublishedAt: latest.PublishedAt, ReportDate: latest.ReportDate, TimeStatus: financialTimeStatus(latest)})
 		if len(financials) == 1 {
@@ -181,11 +192,8 @@ func BuildResearchSnapshot(input Input, analysis Analysis, cutoff time.Time) Res
 	if analysis.Quote.Price <= 0 || input.Quote.Price <= 0 {
 		snapshot.Limitations = append(snapshot.Limitations, "实时行情缺失，报价来自最近日线收盘，不能当作盘中实时价格")
 	}
-	if lastDate != "" {
-		day, err := time.Parse("2006-01-02", lastDate)
-		if err == nil && cutoff.Sub(day) > 5*24*time.Hour {
-			snapshot.Limitations = append(snapshot.Limitations, "日线距分析时点超过5天，行情可能过期或停牌，禁止生成新仓价格计划")
-		}
+	if researchPricesStale(snapshot) {
+		snapshot.Limitations = append(snapshot.Limitations, researchPriceFreshnessReason(snapshot))
 	}
 	addAnchor := func(id, label string, price float64) {
 		if price > 0 && finite(price) {

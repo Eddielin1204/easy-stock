@@ -2,8 +2,11 @@ package eastmoney
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -105,21 +108,21 @@ func (c *Client) StockFinancialHistory(ctx context.Context, symbol string, limit
 		Message string `json:"message"`
 		Result  *struct {
 			Data []struct {
-				Symbol                    string         `json:"SECUCODE"`
-				ReportDate                string         `json:"REPORT_DATE"`
-				NoticeDate                string         `json:"NOTICE_DATE"`
-				ReportName                string         `json:"REPORT_DATE_NAME"`
-				Revenue                   flexibleFloat  `json:"TOTALOPERATEREVE"`
-				RevenueYearOverYear       flexibleFloat  `json:"TOTALOPERATEREVETZ"`
-				NetProfit                 flexibleFloat  `json:"PARENTNETPROFIT"`
-				NetProfitYearOverYear     flexibleFloat  `json:"PARENTNETPROFITTZ"`
-				DeductedNetProfit         *flexibleFloat `json:"KCFJCXSYJLR"`
-				DeductedNetProfitYoY      *flexibleFloat `json:"KCFJCXSYJLRTZ"`
-				EPS                       flexibleFloat  `json:"EPSJB"`
-				ROE                       flexibleFloat  `json:"ROEJQ"`
-				GrossMargin               flexibleFloat  `json:"XSMLL"`
-				DebtRatio                 flexibleFloat  `json:"ZCFZL"`
-				OperatingCashFlowPerShare flexibleFloat  `json:"MGJYXJJE"`
+				Symbol                    string          `json:"SECUCODE"`
+				ReportDate                string          `json:"REPORT_DATE"`
+				NoticeDate                string          `json:"NOTICE_DATE"`
+				ReportName                string          `json:"REPORT_DATE_NAME"`
+				Revenue                   financialNumber `json:"TOTALOPERATEREVE"`
+				RevenueYearOverYear       financialNumber `json:"TOTALOPERATEREVETZ"`
+				NetProfit                 financialNumber `json:"PARENTNETPROFIT"`
+				NetProfitYearOverYear     financialNumber `json:"PARENTNETPROFITTZ"`
+				DeductedNetProfit         financialNumber `json:"KCFJCXSYJLR"`
+				DeductedNetProfitYoY      financialNumber `json:"KCFJCXSYJLRTZ"`
+				EPS                       financialNumber `json:"EPSJB"`
+				ROE                       financialNumber `json:"ROEJQ"`
+				GrossMargin               financialNumber `json:"XSMLL"`
+				DebtRatio                 financialNumber `json:"ZCFZL"`
+				OperatingCashFlowPerShare financialNumber `json:"MGJYXJJE"`
 			} `json:"data"`
 		} `json:"result"`
 	}
@@ -137,27 +140,38 @@ func (c *Client) StockFinancialHistory(ctx context.Context, symbol string, limit
 		if len(items) >= limit {
 			break
 		}
-		deductedAvailable := raw.DeductedNetProfit != nil
+		deductedAvailable := raw.DeductedNetProfit.Available
 		deductedNetProfit := 0.0
 		deductedNetProfitYearOverYear := 0.0
 		deductedReportDate := ""
-		if raw.DeductedNetProfit != nil {
-			deductedNetProfit = float64(*raw.DeductedNetProfit)
+		if raw.DeductedNetProfit.Available {
+			deductedNetProfit = raw.DeductedNetProfit.Value
 			deductedReportDate = strings.TrimSpace(raw.ReportDate)
 		}
-		if raw.DeductedNetProfitYoY != nil {
-			deductedNetProfitYearOverYear = float64(*raw.DeductedNetProfitYoY)
+		if raw.DeductedNetProfitYoY.Available {
+			deductedNetProfitYearOverYear = raw.DeductedNetProfitYoY.Value
 		}
+		fields := []string{}
+		for name, number := range map[string]financialNumber{
+			"revenue": raw.Revenue, "revenue_yoy": raw.RevenueYearOverYear, "net_profit": raw.NetProfit, "net_profit_yoy": raw.NetProfitYearOverYear,
+			"deducted_net_profit": raw.DeductedNetProfit, "deducted_net_profit_yoy": raw.DeductedNetProfitYoY, "eps": raw.EPS, "roe": raw.ROE,
+			"gross_margin": raw.GrossMargin, "debt_ratio": raw.DebtRatio, "operating_cash_flow_per_share": raw.OperatingCashFlowPerShare,
+		} {
+			if number.Available {
+				fields = append(fields, name)
+			}
+		}
+		sort.Strings(fields)
 		items = append(items, foundation.StockFundamentals{
 			PublishedAt: parseEastMoneyTime(raw.NoticeDate),
 			Symbol:      normalized.Canonical, ReportDate: strings.TrimSpace(raw.ReportDate), ReportName: strings.TrimSpace(raw.ReportName),
-			Revenue: float64(raw.Revenue), RevenueYearOverYear: float64(raw.RevenueYearOverYear),
-			NetProfit: float64(raw.NetProfit), NetProfitYearOverYear: float64(raw.NetProfitYearOverYear),
+			Revenue: raw.Revenue.Value, RevenueYearOverYear: raw.RevenueYearOverYear.Value,
+			NetProfit: raw.NetProfit.Value, NetProfitYearOverYear: raw.NetProfitYearOverYear.Value,
 			DeductedNetProfit: deductedNetProfit, DeductedNetProfitYearOverYear: deductedNetProfitYearOverYear,
-			DeductedNetProfitAvailable: deductedAvailable, DeductedNetProfitReportDate: deductedReportDate, EPS: float64(raw.EPS),
-			ROE: float64(raw.ROE), GrossMargin: float64(raw.GrossMargin), DebtRatio: float64(raw.DebtRatio),
-			OperatingCashFlowPerShare: float64(raw.OperatingCashFlowPerShare),
-			Meta:                      foundation.SourceMeta{Source: "eastmoney:f10-financials", SourceURL: requestURL, FetchedAt: time.Now(), LatencyMS: time.Since(start).Milliseconds()},
+			DeductedNetProfitAvailable: deductedAvailable, DeductedNetProfitReportDate: deductedReportDate, EPS: raw.EPS.Value,
+			ROE: raw.ROE.Value, GrossMargin: raw.GrossMargin.Value, DebtRatio: raw.DebtRatio.Value,
+			OperatingCashFlowPerShare: raw.OperatingCashFlowPerShare.Value,
+			Meta:                      foundation.SourceMeta{Source: "eastmoney:f10-financials", AvailableFields: fields, SourceURL: requestURL, FetchedAt: time.Now(), LatencyMS: time.Since(start).Milliseconds()},
 		})
 	}
 	return items, nil
@@ -200,4 +214,34 @@ func lastBusinessSegment(value string) string {
 		}
 	}
 	return ""
+}
+
+// Preserve the difference between explicitly reported zero growth and a
+// missing/placeholder field. Value's zero default alone must not prove stability.
+type financialNumber struct {
+	Value     float64
+	Available bool
+}
+
+func (n *financialNumber) UnmarshalJSON(data []byte) error {
+	*n = financialNumber{}
+	raw := strings.TrimSpace(string(data))
+	if strings.HasPrefix(raw, "\"") {
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return err
+		}
+		raw = strings.TrimSpace(raw)
+	}
+	if raw == "" || raw == "null" || raw == "-" || raw == "--" {
+		return nil
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return err
+	}
+	if !math.IsNaN(value) && !math.IsInf(value, 0) {
+		n.Value = value
+		n.Available = true
+	}
+	return nil
 }

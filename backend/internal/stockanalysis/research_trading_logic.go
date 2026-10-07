@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+
+	"easy-stock/backend/internal/foundation"
 )
 
 const researchTradingLogicRules = `
@@ -146,8 +148,8 @@ func tradingLogicMarketUsable(source ResearchSource, name string, cutoff time.Ti
 		return strings.EqualFold(strings.ReplaceAll(strings.TrimSpace(topic), " ", ""), strings.ReplaceAll(name, " ", ""))
 	}
 	fresh := func(date string) bool {
-		day, err := time.Parse("2006-01-02", date)
-		return err == nil && !day.After(cutoff) && cutoff.Sub(day) <= 5*24*time.Hour
+		lag, valid := foundation.AStockSessionLag(date, cutoff)
+		return valid && lag <= 5
 	}
 	if source.ID == "m-sector" {
 		var data struct {

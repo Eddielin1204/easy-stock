@@ -73,8 +73,20 @@ type StockBusinessProfileProvider interface {
 	StockFundamentals(ctx context.Context, symbol string) (foundation.StockFundamentals, error)
 }
 
+type StockValuationProvider interface {
+	StockValuations(context.Context, []string) ([]foundation.StockValuation, error)
+}
+
 type StockFinancialHistoryProvider interface {
 	StockFinancialHistory(ctx context.Context, symbol string, limit int) ([]foundation.StockFundamentals, error)
+}
+
+type StockFinancialSupplementProvider interface {
+	StockFinancialEvidence(ctx context.Context, symbol string, limit int) ([]foundation.StockFinancialEvidence, error)
+}
+
+type IndustryStocksProvider interface {
+	IndustryStocks(context.Context, string, int) ([]foundation.BoardStock, foundation.SourceMeta, error)
 }
 
 type MarketAnnouncementContentProvider interface {
@@ -116,47 +128,50 @@ type ReviewImporter interface {
 }
 
 type Config struct {
-	Token                string
-	Realtime             RealtimeProvider
-	KLinePrimary         KLineProvider
-	KLineFallback        KLineProvider
-	News                 NewsProvider
-	StockNews            StockNewsSearchProvider
-	SectorMap            SectorMapProvider
-	ThemeOverview        ThemeOverviewProvider
-	ThemeIndex           *themeindex.Service
-	ThemeRadarFallback   ThemeRadarFallback
-	LimitUp              LimitUpProvider
-	MarketPools          MarketPoolProvider
-	StockConcept         StockConceptProvider
-	StockBusiness        StockBusinessProfileProvider
-	StockDirectory       StockDirectoryProvider
-	HotStocks            HotStockProvider
-	FuturesPosition      FuturesPositionProvider
-	MarketOverview       MarketOverviewProvider
-	Inflection           InflectionEvaluator
-	ReviewDBPath         string
-	PortfolioDBPath      string
-	StockResearchDBPath  string
-	StockResearchStore   *stockanalysis.ResearchStore
-	MarketEmotionDBPath  string
-	ThemeRadarDBPath     string
-	DuanxianxiaBaseURL   string
-	WeChatAPIURL         string
-	ReviewHTTP           *http.Client
-	ReviewStore          *review.Store
-	PortfolioStore       *portfolioinspection.Store
-	MarketEmotionStore   *marketemotion.Store
-	ReviewImporter       ReviewImporter
-	SettingsPath         string
-	SettingsStore        *appsettings.Store
-	ReviewAutomation     *review.Automation
-	RemoteDailyReviewURL string
-	RemoteDailySync      *review.RemoteDailySync
-	AgentGateway         agent.Gateway
-	MasteryLibrary       *methodology.Library
-	Logger               *log.Logger
-	StrictPersistence    bool
+	Token                    string
+	Realtime                 RealtimeProvider
+	KLinePrimary             KLineProvider
+	KLineFallback            KLineProvider
+	News                     NewsProvider
+	StockNews                StockNewsSearchProvider
+	SectorMap                SectorMapProvider
+	ThemeOverview            ThemeOverviewProvider
+	ThemeIndex               *themeindex.Service
+	ThemeRadarFallback       ThemeRadarFallback
+	LimitUp                  LimitUpProvider
+	MarketPools              MarketPoolProvider
+	StockConcept             StockConceptProvider
+	StockValuation           StockValuationProvider
+	StockBusiness            StockBusinessProfileProvider
+	StockFinancialSupplement StockFinancialSupplementProvider
+	StockDirectory           StockDirectoryProvider
+	IndustryStocks           IndustryStocksProvider
+	HotStocks                HotStockProvider
+	FuturesPosition          FuturesPositionProvider
+	MarketOverview           MarketOverviewProvider
+	Inflection               InflectionEvaluator
+	ReviewDBPath             string
+	PortfolioDBPath          string
+	StockResearchDBPath      string
+	StockResearchStore       *stockanalysis.ResearchStore
+	MarketEmotionDBPath      string
+	ThemeRadarDBPath         string
+	DuanxianxiaBaseURL       string
+	WeChatAPIURL             string
+	ReviewHTTP               *http.Client
+	ReviewStore              *review.Store
+	PortfolioStore           *portfolioinspection.Store
+	MarketEmotionStore       *marketemotion.Store
+	ReviewImporter           ReviewImporter
+	SettingsPath             string
+	SettingsStore            *appsettings.Store
+	ReviewAutomation         *review.Automation
+	RemoteDailyReviewURL     string
+	RemoteDailySync          *review.RemoteDailySync
+	AgentGateway             agent.Gateway
+	MasteryLibrary           *methodology.Library
+	Logger                   *log.Logger
+	StrictPersistence        bool
 }
 
 func normalizeConfig(value any) Config {

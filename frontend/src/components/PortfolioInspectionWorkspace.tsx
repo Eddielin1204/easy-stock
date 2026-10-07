@@ -1,3 +1,4 @@
+import { portfolioScoringVersion } from '../lib/portfolio-optimization';
 import {
 	Activity,
 	CheckCircle2,
@@ -18,7 +19,7 @@ import {
 	WalletCards,
 	type LucideIcon,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
 	BackendConfig,
 	PortfolioInspectionJob,
@@ -35,6 +36,7 @@ import { PortfolioSetupForm } from './PortfolioSetupForm';
 import { ResearchPanel } from './StockResearchReport';
 import { PortfolioAIReportView, originLabel } from './PortfolioAIReport';
 import './portfolio-inspection.css';
+import { PortfolioOptimizationWorkspace } from './PortfolioOptimizationReport';
 
 type Props = {
 	config: BackendConfig | null;
@@ -54,6 +56,7 @@ export function PortfolioInspectionWorkspace({ config, refreshKey, onOpenSetting
 	const [starting, setStarting] = useState(false);
 	const [error, setError] = useState('');
 	const [notice, setNotice] = useState('');
+ const [optimizationSignal,setOptimizationSignal] = useState(0);
 
 	const totalWeight = useMemo(() => draft.holdings.reduce((total, item) => total + item.weight, 0), [draft.holdings]);
 	const running = job?.status === 'running';
@@ -136,11 +139,13 @@ export function PortfolioInspectionWorkspace({ config, refreshKey, onOpenSetting
   try { const payload = await requestJSON<{ data: PortfolioInspectionJob }>(config, `/api/v1/portfolio-inspections/${job.id}/resume`, { method: 'POST' }); setJob(payload.data); setHistory((current) => [payload.data, ...current].slice(0, 12)); setNotice('正在恢复任务，已成功个股报告继续复用'); }
   catch (cause) { setError(cause instanceof Error ? cause.message : '恢复失败'); } finally { setStarting(false); }
  };
- const cancelInspection = async () => {
+	const cancelInspection = async () => {
   if (!config || !job) return; setStarting(true);
   try { await requestJSON(config, `/api/v1/portfolio-inspections/${job.id}/cancel`, { method: 'POST' }); setNotice('已停止组合任务，共享个股研究可继续完成'); }
   catch (cause) { setError(cause instanceof Error ? cause.message : '停止失败'); } finally { setStarting(false); }
  };
+
+ const optimization = job?.report && job.status !== 'running' ? <PortfolioOptimizationWorkspace key={job.id} config={config} sourceId={job.id} canStart={job.status === 'succeeded' && job.report.algorithm_version === portfolioScoringVersion && Boolean(job.report.conclusion.score_available)} startSignal={optimizationSignal} onOpenStockAnalysis={onOpenStockAnalysis} onApply={(request) => void startInspection([],request)} onRefreshSource={() => void startInspection([],job.report?.request || job.request)} applyBusy={starting || Boolean(running)} /> : null;
 
 	return <div className="portfolio-inspection-workspace">
 		<aside className="portfolio-history stock-ai-panel" aria-label="巡检历史">
@@ -167,9 +172,10 @@ export function PortfolioInspectionWorkspace({ config, refreshKey, onOpenSetting
 
 			{job?.status === 'running' && <><InspectionProgress job={job} /><button type="button" className="portfolio-task-action" disabled={starting} onClick={() => void cancelInspection()}>停止持仓分析</button></>}
 			{job?.resume_available && !running && <div className="portfolio-report-warning portfolio-recovery"><CircleAlert size={16} /><span>{job.error || '上次任务未完成，已有报告已保存'}</span><button type="button" disabled={starting} onClick={() => void resumeInspection()}>{job.results.every((r) => r.status === 'succeeded') ? '重试组合评估' : '补齐失败个股'}</button></div>}
-   {job?.report && job.status !== 'running' && (job.report.algorithm_version === 'portfolio-ai-score-v3'
-    ? <PortfolioAIReportView report={job.report} busy={starting} onNew={() => setJob(null)} onOpenStockAnalysis={onOpenStockAnalysis} onRefresh={(symbol) => void startInspection([symbol], job.report?.request || job.request)} />
-    : <PortfolioReportView report={job.report} status={job.status} onNew={() => setJob(null)} onOpenStockAnalysis={onOpenStockAnalysis} />)}
+   {job?.report && job.status !== 'running' && (['portfolio-ai-score-v3', portfolioScoringVersion].includes(job.report.algorithm_version || '')
+    ? <PortfolioAIReportView report={job.report} afterSummary={optimization} busy={starting} onOptimize={job.status === 'succeeded' && job.report.algorithm_version === portfolioScoringVersion && job.report.conclusion.score_available ? () => setOptimizationSignal((n) => n+1) : undefined} onNew={() => setJob(null)} onOpenStockAnalysis={onOpenStockAnalysis} onRefresh={(symbol) => void startInspection([symbol], job.report?.request || job.request)} />
+    : <PortfolioReportView report={job.report} afterSummary={optimization} status={job.status} onNew={() => setJob(null)} onOpenStockAnalysis={onOpenStockAnalysis} />)}
+
 		</section>
 	</div>;
 }
@@ -185,7 +191,7 @@ function InspectionProgress({ job }: { job: PortfolioInspectionJob }) {
 	</section>;
 }
 
-function PortfolioReportView({ report, status, onNew, onOpenStockAnalysis }: { report: PortfolioInspectionReport; status: string; onNew: () => void; onOpenStockAnalysis: (analysis: StockAIAnalysis) => void }) {
+function PortfolioReportView({ report, status, onNew, onOpenStockAnalysis, afterSummary }: { report: PortfolioInspectionReport; afterSummary?: ReactNode; status: string; onNew: () => void; onOpenStockAnalysis: (analysis: StockAIAnalysis) => void }) {
 	const { conclusion, metrics } = report;
 	const isV2 = report.algorithm_version === 'portfolio-health-v2';
 	const names = new Map(report.holdings.map((item) => [item.holding.symbol, item.analysis?.name || item.holding.name || item.holding.symbol]));
@@ -203,6 +209,7 @@ function PortfolioReportView({ report, status, onNew, onOpenStockAnalysis }: { r
 			<div className="stock-ai-conclusion"><div className="stock-ai-tags"><span>{conclusion.risk_level}风险</span><span>覆盖 {metrics.coverage_percent}%</span><span>{conclusion.source === 'hermes-ai' ? 'AI 综合研判' : '本地规则研判'}</span></div><h3>巡检结论</h3><p>{conclusion.executive_summary}</p></div>
 			<div className="stock-ai-verdict-actions"><button type="button" className="primary" onClick={onNew}><Plus size={15} />新建巡检</button></div>
 		</header>
+		{afterSummary}
 		{status === 'partial' && <div className="portfolio-report-warning"><CircleAlert size={15} />报告已生成，但部分个股或组合分析使用降级结果。</div>}
 		{metrics.stop_loss_coverage_percent !== undefined && metrics.stop_loss_coverage_percent < 100 && <div className="portfolio-report-warning"><CircleAlert size={15} />有效静态止损仅覆盖 {metrics.stop_loss_coverage_percent}% 的持仓；其余风险未估算，不能视为零风险。</div>}
 		{isV2 ? <section className="stock-ai-kpis portfolio-report-overview" aria-label="组合量化指标">

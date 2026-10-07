@@ -127,7 +127,6 @@
 .portfolio-score-dimensions .stock-ai-kpi p { font-size:13px; line-height:1.7; color:var(--muted); }
 .portfolio-score-dimensions details { border-top:1px solid var(--line); padding-top:10px; margin-top:12px; }
 .portfolio-score-dimensions summary, .portfolio-research-baseline > summary { cursor:pointer; font-weight:600; font-size:13px; }
-.portfolio-confidence { display:flex; align-items:baseline; gap:6px; font-size:12px; line-height:1.7; color:var(--muted); margin-top:10px; }
 .portfolio-ai-report .stock-ai-conclusion h3 strong { color:var(--theme-blue, #2476d2); margin-left:8px; }
 .portfolio-ai-report .stock-ai-conclusion h3 small { font-size:13px; color:var(--muted); }
 .portfolio-evidence details { margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); }
@@ -151,3 +150,5 @@
 .portfolio-progress > small { grid-column: 2 / -1; white-space: normal; }
 .portfolio-recovery { align-items:center; flex-wrap:wrap; }
 .portfolio-recovery button { margin:0 0 0 auto; }
+
+.portfolio-scoring-scope { margin:0; padding:12px 16px; border:1px solid var(--line); border-radius:10px; color:var(--muted); font-size:13px; line-height:1.8; }

@@ -88,6 +88,68 @@ type researchFinancialProvider struct {
 	latestCalls int
 }
 
+type missingFinancialProvider struct{ stockAnalysisBusiness }
+
+func (missingFinancialProvider) StockFinancialHistory(context.Context, string, int) ([]foundation.StockFundamentals, error) {
+	return nil, errors.New("primary unavailable")
+}
+func (missingFinancialProvider) StockFundamentals(context.Context, string) (foundation.StockFundamentals, error) {
+	return foundation.StockFundamentals{}, errors.New("primary unavailable")
+}
+
+type financialSupplementFixture struct {
+	items []foundation.StockFinancialEvidence
+	err   error
+}
+
+func (p financialSupplementFixture) StockFinancialEvidence(context.Context, string, int) ([]foundation.StockFinancialEvidence, error) {
+	return p.items, p.err
+}
+
+func TestResearchCollectsSecondFinancialSourceAndFallsBackWithoutInventingValues(t *testing.T) {
+	for _, missing := range []bool{false, true} {
+		primary := StockBusinessProfileProvider(&researchFinancialProvider{history: []foundation.StockFundamentals{{Symbol: "600519.SH", ReportDate: "2026-06-30", Revenue: 1000000000, NetProfit: 100000000, Meta: foundation.SourceMeta{Source: "eastmoney:f10-financials"}}}})
+		if missing {
+			primary = missingFinancialProvider{}
+		}
+		secondary := financialSupplementFixture{items: []foundation.StockFinancialEvidence{{Symbol: "600519.SH", ReportDate: "2026-06-30", Fields: map[string]float64{"revenue": 1000000000, "net_profit": 100000000}, Meta: foundation.SourceMeta{Source: "sina:financial-indicators"}}}}
+		server := NewServer(Config{Realtime: stockAnalysisRealtime{}, KLinePrimary: stockAnalysisKLines{}, KLineFallback: stockAnalysisKLines{}, LimitUp: stockAnalysisLimitUps{}, StockConcept: stockAnalysisCatalog{}, StockBusiness: primary, StockFinancialSupplement: secondary, MarketOverview: &fakeMarketOverviewProvider{}, ThemeOverview: stockAnalysisThemes{}, News: stockAnalysisNews{}, ReviewDBPath: ":memory:"})
+		_, snapshot, err := server.collectStockResearch(context.Background(), "600519.SH")
+		server.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, source := range snapshot.Sources {
+			if source.ID != "f-financial" {
+				continue
+			}
+			found = true
+			var value struct {
+				Data       map[string]any                      `json:"data"`
+				Supplement []foundation.StockFinancialEvidence `json:"supplemental_history"`
+				Checks     []map[string]any                    `json:"cross_checks"`
+			}
+			if json.Unmarshal([]byte(source.Content), &value) != nil || len(value.Supplement) != 1 {
+				t.Fatal("second source not included")
+			}
+			if missing {
+				if source.Provider != "sina:financial-indicators" || value.Data["revenue"] != float64(1000000000) {
+					t.Fatal("source failure lost financial fallback")
+				}
+				if _, ok := value.Data["operating_cash_flow_per_share"]; ok {
+					t.Fatal("missing cash flow invented as zero")
+				}
+			} else if len(value.Checks) != 1 {
+				t.Fatal("matching-period cross-check skipped")
+			}
+		}
+		if !found {
+			t.Fatal("no financial evidence")
+		}
+	}
+}
+
 func (p *researchFinancialProvider) StockFinancialHistory(_ context.Context, _ string, limit int) ([]foundation.StockFundamentals, error) {
 	if limit != 8 {
 		return nil, errors.New("unexpected financial history limit")

@@ -858,6 +858,10 @@ func (r *HermesRuntime) prompt(ctx context.Context, prompt, browserStatePath str
 	}
 }
 
+// Only recognized transient transport failures are eligible for bounded host
+// retry. Auth, quota, model and unknown failures keep their actionable errors.
+var ErrModelTransport = errors.New("模型临时连接失败")
+
 func embeddedModelResponseError(content string) error {
 	value := strings.ToLower(strings.TrimSpace(content))
 	switch {
@@ -871,11 +875,22 @@ func embeddedModelResponseError(content string) error {
 		return errors.New("Hermes 模型接口拒绝访问，请检查 API Key 权限和模型权限")
 	case strings.Contains(value, "http 429"), strings.Contains(value, "rate limit exceeded"), strings.Contains(value, "model_cooldown"), strings.Contains(value, "cooling down"), strings.Contains(value, "all credentials"):
 		return errors.New("Hermes 模型接口请求过于频繁或额度不足，请稍后重试并检查账户额度")
+	case (strings.HasPrefix(value, "api call failed") || strings.HasPrefix(value, "http 502") || strings.HasPrefix(value, "http 503") || strings.HasPrefix(value, "http 504")) && transientModelTransport(value):
+		return fmt.Errorf("Hermes 上游模型调用失败：%w；未取得有效分析内容", ErrModelTransport)
 	case strings.HasPrefix(value, "api call failed"):
 		return errors.New("Hermes 上游模型调用失败，请检查模型服务连接；该响应不是有效分析内容")
 	default:
 		return nil
 	}
+}
+
+func transientModelTransport(value string) bool {
+	for _, marker := range []string{"broken pipe", "connection reset", "connection aborted", "connection refused", "remote disconnected", "server disconnected", "read timed out", "connect timeout", "non-streaming api call timed out", "http 502", "http 503", "http 504"} {
+		if strings.Contains(value, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 type tailBuffer struct {

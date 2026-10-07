@@ -20,6 +20,7 @@ import (
 	"easy-stock/backend/internal/methodology"
 	"easy-stock/backend/internal/notification"
 	"easy-stock/backend/internal/portfolioinspection"
+	"easy-stock/backend/internal/portfoliooptimization"
 	"easy-stock/backend/internal/providers/cls"
 	"easy-stock/backend/internal/providers/duanxianxia"
 	"easy-stock/backend/internal/providers/eastmoney"
@@ -37,57 +38,61 @@ import (
 )
 
 type Server struct {
-	ladderThemeAI         *ladderThemeAI
-	mux                   *http.ServeMux
-	token                 string
-	realtimeProvider      RealtimeProvider
-	kLinePrimary          KLineProvider
-	kLineFallback         KLineProvider
-	newsProvider          NewsProvider
-	stockNewsSearch       StockNewsSearchProvider
-	sectorMap             SectorMapProvider
-	themeOverview         ThemeOverviewProvider
-	themeIndex            *themeindex.Service
-	limitUpProvider       LimitUpProvider
-	marketPools           MarketPoolProvider
-	stockConcepts         StockConceptProvider
-	stockBusiness         StockBusinessProfileProvider
-	stockDirectory        StockDirectoryProvider
-	hotStockProvider      HotStockProvider
-	futuresPosition       FuturesPositionProvider
-	marketOverview        MarketOverviewProvider
-	inflection            InflectionEvaluator
-	themeSnapshots        *themeSnapshotCache
-	limitUpSnapshots      *limitUpLadderCache
-	limitUpProgress       *shortTermCache[limitUpLadderData]
-	emotionProgress       *shortTermCache[marketemotion.History]
-	stockDirectories      *stockDirectoryCache
-	hotStockRanks         *hotStockRankCache
-	marketSnapshots       *marketOverviewCache
-	marketEmotion         *marketEmotionEngine
-	marketEmotionIntraday *marketEmotionIntradayCache
-	reviewStore           *review.Store
-	portfolioStore        *portfolioinspection.Store
-	portfolioInspection   *portfolioinspection.Service
-	portfolioExpectation  *portfolioinspection.ExpectationService
-	stockResearchStore    *stockanalysis.ResearchStore
-	stockResearch         *stockanalysis.ResearchService
-	reviewImporter        ReviewImporter
-	wechatAPIURL          string
-	settingsStore         *appsettings.Store
-	notificationSender    notificationSender
-	notifications         *notification.Dispatcher
-	reviewAutomation      *review.Automation
-	remoteDailySync       *review.RemoteDailySync
-	agentGateway          agent.Gateway
-	usageGateway          agent.Gateway
-	masteryLibrary        *methodology.Library
-	marketEmotionStore    *marketemotion.Store
-	themeRadarStore       *duanxianxia.Store
-	themeProgress         *themeProgressCache
-	startupError          error
-	logger                *log.Logger
-	tokenUsage            *tokenUsageStore
+	ladderThemeAI            *ladderThemeAI
+	mux                      *http.ServeMux
+	token                    string
+	realtimeProvider         RealtimeProvider
+	kLinePrimary             KLineProvider
+	kLineFallback            KLineProvider
+	newsProvider             NewsProvider
+	stockNewsSearch          StockNewsSearchProvider
+	sectorMap                SectorMapProvider
+	themeOverview            ThemeOverviewProvider
+	themeIndex               *themeindex.Service
+	limitUpProvider          LimitUpProvider
+	marketPools              MarketPoolProvider
+	stockConcepts            StockConceptProvider
+	stockValuation           StockValuationProvider
+	stockBusiness            StockBusinessProfileProvider
+	stockFinancialSupplement StockFinancialSupplementProvider
+	stockDirectory           StockDirectoryProvider
+	industryStocks           IndustryStocksProvider
+	hotStockProvider         HotStockProvider
+	futuresPosition          FuturesPositionProvider
+	marketOverview           MarketOverviewProvider
+	inflection               InflectionEvaluator
+	themeSnapshots           *themeSnapshotCache
+	limitUpSnapshots         *limitUpLadderCache
+	limitUpProgress          *shortTermCache[limitUpLadderData]
+	emotionProgress          *shortTermCache[marketemotion.History]
+	stockDirectories         *stockDirectoryCache
+	hotStockRanks            *hotStockRankCache
+	marketSnapshots          *marketOverviewCache
+	marketEmotion            *marketEmotionEngine
+	marketEmotionIntraday    *marketEmotionIntradayCache
+	reviewStore              *review.Store
+	portfolioStore           *portfolioinspection.Store
+	portfolioInspection      *portfolioinspection.Service
+	portfolioOptimization    *portfoliooptimization.Service
+	portfolioExpectation     *portfolioinspection.ExpectationService
+	stockResearchStore       *stockanalysis.ResearchStore
+	stockResearch            *stockanalysis.ResearchService
+	reviewImporter           ReviewImporter
+	wechatAPIURL             string
+	settingsStore            *appsettings.Store
+	notificationSender       notificationSender
+	notifications            *notification.Dispatcher
+	reviewAutomation         *review.Automation
+	remoteDailySync          *review.RemoteDailySync
+	agentGateway             agent.Gateway
+	usageGateway             agent.Gateway
+	masteryLibrary           *methodology.Library
+	marketEmotionStore       *marketemotion.Store
+	themeRadarStore          *duanxianxia.Store
+	themeProgress            *themeProgressCache
+	startupError             error
+	logger                   *log.Logger
+	tokenUsage               *tokenUsageStore
 }
 
 func NewServer(config any) *Server {
@@ -102,6 +107,9 @@ func NewServer(config any) *Server {
 	tencentClient := tencent.NewClient()
 	clsClient := cls.NewClient()
 	if cfg.Realtime == nil {
+		if cfg.StockValuation == nil {
+			cfg.StockValuation = tencentClient
+		}
 		cfg.Realtime = sinaClient
 	}
 	if cfg.KLinePrimary == nil {
@@ -144,9 +152,15 @@ func NewServer(config any) *Server {
 	}
 	if cfg.StockBusiness == nil {
 		cfg.StockBusiness = eastMoneyClient
+		if cfg.StockFinancialSupplement == nil {
+			cfg.StockFinancialSupplement = sinaClient
+		}
 	}
 	if cfg.StockDirectory == nil {
 		cfg.StockDirectory = eastMoneyClient
+	}
+	if cfg.IndustryStocks == nil {
+		cfg.IndustryStocks = tencentClient
 	}
 	if cfg.MarketOverview == nil {
 		cfg.MarketOverview = marketoverviewprovider.New(eastMoneyClient, tencentClient, tencentClient, sinaClient)
@@ -290,50 +304,53 @@ func NewServer(config any) *Server {
 		})
 	}
 	s := &Server{
-		mux:                   http.NewServeMux(),
-		token:                 cfg.Token,
-		realtimeProvider:      cfg.Realtime,
-		kLinePrimary:          cfg.KLinePrimary,
-		kLineFallback:         cfg.KLineFallback,
-		newsProvider:          cfg.News,
-		stockNewsSearch:       cfg.StockNews,
-		sectorMap:             cfg.SectorMap,
-		themeOverview:         cfg.ThemeOverview,
-		limitUpProvider:       cfg.LimitUp,
-		marketPools:           cfg.MarketPools,
-		stockConcepts:         cfg.StockConcept,
-		stockBusiness:         cfg.StockBusiness,
-		stockDirectory:        cfg.StockDirectory,
-		hotStockProvider:      cfg.HotStocks,
-		futuresPosition:       cfg.FuturesPosition,
-		marketOverview:        cfg.MarketOverview,
-		inflection:            cfg.Inflection,
-		themeSnapshots:        newThemeSnapshotCache(30 * time.Second),
-		themeProgress:         newThemeProgressCache(),
-		limitUpSnapshots:      newLimitUpLadderCache(30 * time.Second),
-		limitUpProgress:       &shortTermCache[limitUpLadderData]{},
-		emotionProgress:       &shortTermCache[marketemotion.History]{},
-		stockDirectories:      newStockDirectoryCache(6 * time.Hour),
-		hotStockRanks:         newHotStockRankCache(2 * time.Minute),
-		marketSnapshots:       newMarketOverviewCache(45 * time.Second),
-		marketEmotionIntraday: newMarketEmotionIntradayCache(marketEmotionIntradayTTL),
-		reviewStore:           cfg.ReviewStore,
-		portfolioStore:        cfg.PortfolioStore,
-		stockResearchStore:    cfg.StockResearchStore,
-		reviewImporter:        cfg.ReviewImporter,
-		wechatAPIURL:          strings.TrimSpace(cfg.WeChatAPIURL),
-		settingsStore:         cfg.SettingsStore,
-		notificationSender:    notification.NewSender(),
-		ladderThemeAI:         newLadderThemeAI(cfg.SettingsPath),
-		reviewAutomation:      cfg.ReviewAutomation,
-		remoteDailySync:       cfg.RemoteDailySync,
-		agentGateway:          cfg.AgentGateway,
-		usageGateway:          usageGateway,
-		masteryLibrary:        cfg.MasteryLibrary,
-		marketEmotionStore:    cfg.MarketEmotionStore,
-		startupError:          errors.Join(startupErrors...),
-		logger:                cfg.Logger,
-		tokenUsage:            tokenUsage,
+		mux:                      http.NewServeMux(),
+		token:                    cfg.Token,
+		realtimeProvider:         cfg.Realtime,
+		kLinePrimary:             cfg.KLinePrimary,
+		kLineFallback:            cfg.KLineFallback,
+		newsProvider:             cfg.News,
+		stockNewsSearch:          cfg.StockNews,
+		sectorMap:                cfg.SectorMap,
+		themeOverview:            cfg.ThemeOverview,
+		limitUpProvider:          cfg.LimitUp,
+		marketPools:              cfg.MarketPools,
+		stockConcepts:            cfg.StockConcept,
+		stockBusiness:            cfg.StockBusiness,
+		stockValuation:           cfg.StockValuation,
+		stockFinancialSupplement: cfg.StockFinancialSupplement,
+		stockDirectory:           cfg.StockDirectory,
+		industryStocks:           cfg.IndustryStocks,
+		hotStockProvider:         cfg.HotStocks,
+		futuresPosition:          cfg.FuturesPosition,
+		marketOverview:           cfg.MarketOverview,
+		inflection:               cfg.Inflection,
+		themeSnapshots:           newThemeSnapshotCache(30 * time.Second),
+		themeProgress:            newThemeProgressCache(),
+		limitUpSnapshots:         newLimitUpLadderCache(30 * time.Second),
+		limitUpProgress:          &shortTermCache[limitUpLadderData]{},
+		emotionProgress:          &shortTermCache[marketemotion.History]{},
+		stockDirectories:         newStockDirectoryCache(6 * time.Hour),
+		hotStockRanks:            newHotStockRankCache(2 * time.Minute),
+		marketSnapshots:          newMarketOverviewCache(45 * time.Second),
+		marketEmotionIntraday:    newMarketEmotionIntradayCache(marketEmotionIntradayTTL),
+		reviewStore:              cfg.ReviewStore,
+		portfolioStore:           cfg.PortfolioStore,
+		stockResearchStore:       cfg.StockResearchStore,
+		reviewImporter:           cfg.ReviewImporter,
+		wechatAPIURL:             strings.TrimSpace(cfg.WeChatAPIURL),
+		settingsStore:            cfg.SettingsStore,
+		notificationSender:       notification.NewSender(),
+		ladderThemeAI:            newLadderThemeAI(cfg.SettingsPath),
+		reviewAutomation:         cfg.ReviewAutomation,
+		remoteDailySync:          cfg.RemoteDailySync,
+		agentGateway:             cfg.AgentGateway,
+		usageGateway:             usageGateway,
+		masteryLibrary:           cfg.MasteryLibrary,
+		marketEmotionStore:       cfg.MarketEmotionStore,
+		startupError:             errors.Join(startupErrors...),
+		logger:                   cfg.Logger,
+		tokenUsage:               tokenUsage,
 	}
 	if kaipanlaService != nil {
 		s.themeRadarStore = kaipanlaService.Store()
@@ -370,10 +387,11 @@ func NewServer(config any) *Server {
 	s.notifications = notification.NewDispatcher(func(ctx context.Context, channel string, cfg appsettings.NotificationChannel, message notification.Message) error {
 		return s.notificationSender.Send(ctx, channel, cfg, message)
 	}, func() appsettings.Notifications { return s.settingsStore.Snapshot().Notifications }, cfg.Logger)
-	s.stockResearch = stockanalysis.NewResearchService(cfg.StockResearchStore, s.runStockResearch, s.notifyStockResearch)
+	s.stockResearch = stockanalysis.NewResearchServiceWithPreparation(cfg.StockResearchStore, s.runStockResearch, s.prepareStockResearch, s.notifyStockResearch)
 	s.portfolioInspection = portfolioinspection.NewService(cfg.PortfolioStore, usageGateway, s.analyzeStock, cfg.Logger, s.analyzeHoldingResearch)
 	s.portfolioInspection.ConfigureCompletion(s.notifyPortfolioInspection)
 	s.portfolioInspection.ConfigureResearch(s.resolvePortfolioResearch, s.refreshPortfolioQuotes)
+	s.portfolioOptimization = portfoliooptimization.NewService(cfg.PortfolioStore, usageGateway, portfoliooptimization.Dependencies{Collect: s.collectOptimizationUniverse, Research: s.resolvePortfolioResearch, Quotes: s.refreshOptimizationQuotes})
 	s.portfolioExpectation = portfolioinspection.NewExpectationService(cfg.PortfolioStore, cfg.ReviewStore, usageGateway, s.analyzeStock, cfg.Logger, s.analyzeHoldingResearch)
 	s.themeIndex = cfg.ThemeIndex
 	if s.themeIndex == nil {
@@ -420,6 +438,9 @@ func (s *Server) Close() error {
 	var closeErrors []error
 	if s.notifications != nil {
 		s.notifications.Close()
+	}
+	if s.portfolioOptimization != nil {
+		s.portfolioOptimization.Close()
 	}
 	if s.portfolioInspection != nil {
 		s.portfolioInspection.Close()
@@ -572,6 +593,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/stocks/research/{id}/snapshot", s.stockResearchSnapshot)
 	s.mux.HandleFunc("GET /api/v1/stocks/directory", s.stockDirectoryHandler)
 	s.mux.HandleFunc("GET /api/v1/stocks/hot-ranks", s.hotStockRanksHandler)
+	s.mux.HandleFunc("POST /api/v1/portfolio-inspections/{id}/optimizations", s.portfolioOptimizationCreate)
+	s.mux.HandleFunc("GET /api/v1/portfolio-inspections/{id}/optimizations", s.portfolioOptimizationList)
+	s.mux.HandleFunc("GET /api/v1/portfolio-optimizations/{id}", s.portfolioOptimizationGet)
+	s.mux.HandleFunc("POST /api/v1/portfolio-optimizations/{id}/cancel", s.portfolioOptimizationCancel)
+	s.mux.HandleFunc("POST /api/v1/portfolio-optimizations/{id}/resume", s.portfolioOptimizationResume)
 	s.mux.HandleFunc("GET /api/v1/portfolio-inspections", s.portfolioInspectionList)
 	s.mux.HandleFunc("POST /api/v1/portfolio-inspections", s.portfolioInspectionCreate)
 	s.mux.HandleFunc("GET /api/v1/portfolio-inspections/{id}", s.portfolioInspectionGet)

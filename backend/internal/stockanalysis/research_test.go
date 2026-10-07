@@ -51,8 +51,8 @@ func TestResearchRequestBoundaries(t *testing.T) {
 			t.Fatalf("level normalization: %q %+v %v", level, got, err)
 		}
 	}
-	if ResearchStageTimeout(ResearchRequest{AnalysisLevel: ResearchLevelDeep}) != 8*time.Minute || ResearchTotalTimeout(ResearchRequest{AnalysisLevel: ResearchLevelDeep}) != 24*time.Minute {
-		t.Fatal("deep research timeouts were not expanded")
+	if ResearchStageTimeout(ResearchRequest{AnalysisLevel: ResearchLevelDeep}) != 8*time.Minute || ResearchTotalTimeout(ResearchRequest{AnalysisLevel: ResearchLevelDeep}) != 35*time.Minute {
+		t.Fatal("deep research budget must include collection, supplementation and repair")
 	}
 }
 
@@ -376,11 +376,11 @@ func TestResearchStalePricesAndOpinionsCannotCreateConfidentPlan(t *testing.T) {
 	AppendResearchSources(&snapshot, []ResearchSource{opinion})
 	result := validResearch()
 	result.Thesis = ResearchClaim{Text: "利润可能改善", Kind: "fact", SourceIDs: []string{opinion.ID}, Quote: "利润可能改善"}
-	snapshot.CutoffAt = snapshot.CutoffAt.Add(10 * 24 * time.Hour)
+	snapshot.CutoffAt = snapshot.CutoffAt.Add(30 * 24 * time.Hour)
 	if _, err := validateResearch(&result, snapshot); err != nil {
 		t.Fatal(err)
 	}
-	if result.Thesis.Kind == "fact" || result.EvidenceLevel != "insufficient" || result.Decision.Status != "no_plan" {
+	if result.Thesis.Kind == "fact" || result.EvidenceLevel != "limited" || result.Decision.Status != "no_plan" || len(result.Decision.Blockers) == 0 {
 		t.Fatal("opinion/stale report overstated")
 	}
 }

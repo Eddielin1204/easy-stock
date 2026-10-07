@@ -39,16 +39,51 @@ func (s *Server) awaitStockResearch(ctx context.Context, request stockanalysis.R
 	return *job.Analysis, nil
 }
 
-func (s *Server) runStockResearch(ctx context.Context, request stockanalysis.ResearchRequest, publish stockanalysis.ResearchPublisher) (stockanalysis.Analysis, *stockanalysis.ResearchSnapshot, error) {
+func (s *Server) prepareStockResearch(ctx context.Context, request stockanalysis.ResearchRequest) (context.Context, stockanalysis.ResearchBudget, func(), error) {
 	promptGateway := s.usageGateway
 	if promptGateway == nil {
 		promptGateway = s.agentGateway
 	}
 	ctx, release, bindErr := agent.BindTask(ctx, promptGateway)
 	if bindErr != nil {
-		return stockanalysis.Analysis{}, nil, bindErr
+		return ctx, stockanalysis.ResearchBudget{}, release, bindErr
 	}
-	defer release()
+	llm, bound := agent.BoundLLM(ctx)
+	if !bound && s.settingsStore != nil {
+		llm = s.settingsStore.Snapshot().LLM
+	}
+	effort, boundEffort := agent.BoundReasoningEffort(ctx)
+	if !boundEffort && s.agentGateway != nil {
+		if settingsGateway, ok := s.agentGateway.(agent.SettingsGateway); ok {
+			if settings, err := settingsGateway.AgentSettings(); err == nil {
+				effort = settings.ReasoningEffort
+			}
+		}
+	}
+	wait := time.Duration(appsettings.NormalizeLLMResponseTimeoutSeconds(llm.ResponseTimeoutSeconds)) * time.Second
+	return ctx, stockanalysis.ResearchBudgetFor(request, wait, effort), release, nil
+}
+
+func (s *Server) runStockResearch(ctx context.Context, request stockanalysis.ResearchRequest, publish stockanalysis.ResearchPublisher) (stockanalysis.Analysis, *stockanalysis.ResearchSnapshot, error) {
+	budget, prepared := stockanalysis.ResearchExecutionBudget(ctx)
+	if !prepared {
+		var release func()
+		var err error
+		ctx, budget, release, err = s.prepareStockResearch(ctx, request)
+		if err != nil {
+			return stockanalysis.Analysis{}, nil, err
+		}
+		defer release()
+	}
+	ctx, cancel := context.WithTimeout(stockanalysis.WithResearchBudget(ctx, budget), budget.TotalTimeout())
+	defer cancel()
+	promptGateway := s.usageGateway
+	if promptGateway == nil {
+		promptGateway = s.agentGateway
+	}
+	if s.logger != nil {
+		s.logger.Printf("level=info event=stock_research_budget feature=stock-analysis symbol=%q analysis_level=%q reasoning_effort=%q response_timeout_seconds=%d stage_timeout_seconds=%d total_timeout_seconds=%d", request.Symbol, request.AnalysisLevel, budget.ReasoningEffort, budget.ResponseTimeoutSeconds, budget.StageTimeoutSeconds, budget.TotalTimeoutSeconds)
+	}
 	if err := publish("collecting", "正在采集行情、公告和研究资料", nil, nil); err != nil {
 		return stockanalysis.Analysis{}, nil, err
 	}
@@ -58,7 +93,9 @@ func (s *Server) runStockResearch(ctx context.Context, request stockanalysis.Res
 	if previous := stockanalysis.ResearchResumeData(ctx); previous != nil && previous.Analysis != nil && previous.Snapshot != nil {
 		analysis, snapshot = stockanalysis.QuantitativeOnly(*previous.Analysis), previous.Snapshot
 	} else {
-		analysis, snapshot, err = s.collectStockResearch(ctx, request.Symbol)
+		collectCtx, stopCollection := context.WithTimeout(ctx, stockanalysis.ResearchCollectionTimeout)
+		analysis, snapshot, err = s.collectStockResearch(collectCtx, request.Symbol)
+		stopCollection()
 	}
 	if err != nil {
 		return analysis, snapshot, err
@@ -99,8 +136,6 @@ func (s *Server) runStockResearch(ctx context.Context, request stockanalysis.Res
 		identity = modelIdentity
 	}
 	ctx = stockanalysis.WithResearchModelIdentity(ctx, identity)
-	modelCtx, cancel := context.WithTimeout(ctx, stockanalysis.ResearchTotalTimeout(request))
-	defer cancel()
 	baseline := analysis
 	var persistenceErr error
 	progress := func(stage, message string) {
@@ -136,7 +171,7 @@ func (s *Server) runStockResearch(ctx context.Context, request stockanalysis.Res
 		}
 		return modelIdentity == s.stockResearchModelIdentity()
 	}}
-	err = stockanalysis.RunResearch(modelCtx, guarded, snapshot, &analysis, request, model, s.supplementStockResearch, progress)
+	err = stockanalysis.RunResearch(ctx, guarded, snapshot, &analysis, request, model, s.supplementStockResearch, progress)
 	if persistenceErr != nil {
 		return stockanalysis.QuantitativeOnly(baseline), snapshot, persistenceErr
 	}
@@ -184,9 +219,18 @@ func (p researchPrompter) PromptWithOptions(ctx context.Context, prompt string, 
 		return agent.PromptResult{}, fmt.Errorf("研究期间模型配置发生变化")
 	}
 	callCtx := agent.WithUsageModule(ctx, "stock-analysis")
+	budget, prepared := stockanalysis.ResearchExecutionBudget(ctx)
+	if !prepared {
+		wait := time.Duration(0)
+		if llm, ok := agent.BoundLLM(ctx); ok {
+			wait = time.Duration(appsettings.NormalizeLLMResponseTimeoutSeconds(llm.ResponseTimeoutSeconds)) * time.Second
+		}
+		effort, _ := agent.BoundReasoningEffort(ctx)
+		budget = stockanalysis.ResearchBudgetFor(p.request, wait, effort)
+	}
 	stageLimit := p.stageTimeout
 	if stageLimit <= 0 {
-		stageLimit = stockanalysis.ResearchStageTimeout(p.request)
+		stageLimit = budget.StageTimeout()
 	}
 	// One deadline covers the initial call and every runtime/host retry. It
 	// cannot consume the budget reserved for the rest of a deep research job.
@@ -194,10 +238,7 @@ func (p researchPrompter) PromptWithOptions(ctx context.Context, prompt string, 
 	defer cancel()
 	wait := p.waitTimeout
 	if wait <= 0 {
-		wait = stockanalysis.ResearchStageTimeout(p.request)
-		if llm, ok := agent.BoundLLM(ctx); ok {
-			wait = time.Duration(appsettings.NormalizeLLMResponseTimeoutSeconds(llm.ResponseTimeoutSeconds)) * time.Second
-		}
+		wait = budget.ResponseTimeout()
 	}
 	options.FirstResponseTimeout, options.IdleTimeout = wait, wait
 	if options.MaxAttempts <= 0 || options.MaxAttempts > 2 {

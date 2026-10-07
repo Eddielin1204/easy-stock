@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"easy-stock/backend/internal/agent"
+	"easy-stock/backend/internal/appsettings"
 	"easy-stock/backend/internal/foundation"
 	"easy-stock/backend/internal/runtimelog"
 	"easy-stock/backend/internal/stockanalysis"
@@ -126,8 +127,7 @@ func (s *Service) start(ctx context.Context, request Request, previous *Job) (Jo
 	if _, err := s.store.Save(ctx, job); err != nil {
 		return Job{}, err
 	}
-	budget := time.Duration((len(job.Results)+DefaultConcurrency-1)/DefaultConcurrency)*stockanalysis.ResearchTotalTimeout(stockanalysis.ResearchRequest{AnalysisLevel: normalized.ResearchLevel}) + AggregationTimeout + 2*time.Minute
-	runCtx, cancel := context.WithTimeout(context.Background(), budget)
+	runCtx, cancel := context.WithCancel(context.Background())
 	s.runningID, s.cancel = job.ID, cancel
 	s.wg.Add(1)
 	initial := job
@@ -203,6 +203,15 @@ func (s *Service) run(ctx context.Context, job Job) {
 	}
 	ctx = bound
 	defer release()
+	responseWait := time.Duration(0)
+	if llm, ok := agent.BoundLLM(ctx); ok {
+		responseWait = time.Duration(appsettings.NormalizeLLMResponseTimeoutSeconds(llm.ResponseTimeoutSeconds)) * time.Second
+	}
+	effort, _ := agent.BoundReasoningEffort(ctx)
+	researchBudget := stockanalysis.ResearchBudgetFor(stockanalysis.ResearchRequest{AnalysisLevel: job.Request.ResearchLevel}, responseWait, effort)
+	budget := time.Duration((len(job.Results)+DefaultConcurrency-1)/DefaultConcurrency)*researchBudget.TotalTimeout() + AggregationTimeout + 2*time.Minute
+	ctx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
 	type event struct {
 		index  int
 		result HoldingResult
@@ -471,7 +480,7 @@ func normalizeRequest(request Request) (Request, error) {
 	if !oneOf(string(request.ResearchLevel), "standard", "deep") {
 		return Request{}, errors.New("补齐个股研究请选择标准或深度")
 	}
-	normalized := Request{TraderProfile: request.TraderProfile, Horizon: request.Horizon, ResearchLevel: request.ResearchLevel, Holdings: make([]Holding, 0, len(request.Holdings))}
+	normalized := Request{SourceOptimizationID: strings.TrimSpace(request.SourceOptimizationID), TraderProfile: request.TraderProfile, Horizon: request.Horizon, ResearchLevel: request.ResearchLevel, Holdings: make([]Holding, 0, len(request.Holdings))}
 	for _, holding := range request.Holdings {
 		symbol, err := foundation.NormalizeSymbol(holding.Symbol)
 		if err != nil {

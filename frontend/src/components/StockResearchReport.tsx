@@ -22,9 +22,11 @@ export function StockResearchProgress({ job, onCancel, onResume, resuming = fals
 	}, [running, job?.id]);
 	if (!job) return null;
 	const elapsed = formatElapsedTime(job.started_at, running ? now : Date.parse(job.completed_at || job.updated_at));
+	const stageSeconds = job.budget?.stage_timeout_seconds || 0;
+	const stageBudget = running && stageSeconds > 0 && !['queued', 'collecting', 'baseline'].includes(job.stage) ? `；当前模型阶段最多 ${Math.ceil(stageSeconds / 60)} 分钟` : '';
 	return <div className={`stock-research-progress ${job.status}`} role="status">
 		{running ? <LoaderCircle className="spin" size={17} /> : job.status === 'succeeded' ? <CheckCircle2 size={17} /> : <CircleAlert size={17} />}
-		<span className="stock-research-progress-message">{job.message}{job.error ? `：${job.error}` : ''}</span>
+		<span className="stock-research-progress-message">{job.message}{stageBudget}{job.error ? `：${job.error}` : ''}</span>
 		<strong className="stock-research-progress-elapsed">目前总耗时 {elapsed}</strong>
 		{!running && job.resume_available && onResume && <button type="button" className="stock-research-resume" disabled={resuming} onClick={onResume}><Play size={15} />{resuming ? '提交中…' : '继续研究'}</button>}
 		{running && <button type="button" onClick={onCancel} title="停止本次研究" aria-label="停止本次研究"><Square size={15} /></button>}
@@ -92,7 +94,7 @@ function Claim({ claim, onSource }: { claim: ResearchClaim; onSource: (id: strin
 function ResearchDecision({ analysis, onSource }: { analysis: StockAIAnalysis; onSource: (id: string) => void }) {
 	const report = analysis.research_report!;
 	const plan = report.decision.price_plan;
-	return <ResearchPanel label="执行边界" title={report.decision.status === 'no_plan' ? '暂不形成交易计划' : report.decision.status === 'observe' ? '观察与核实' : '条件化计划'} icon={ShieldCheck}><p>{report.decision.reason}</p><div className="stock-research-positions"><div><strong>准备新开仓</strong><p>{report.decision.new_position}</p></div><div><strong>已有仓位{report.request.cost_price ? ` · 成本 ${report.request.cost_price.toFixed(2)} 元` : ''}</strong><p>{report.decision.existing_position}</p></div></div>
+	return <ResearchPanel label="执行边界" title={report.decision.status === 'no_plan' ? '暂不形成交易计划' : report.decision.status === 'observe' ? '观察与核实' : '条件化计划'} icon={ShieldCheck}><p>{report.decision.reason}</p>{!!report.decision.blockers?.length && <ul>{report.decision.blockers.map((reason,i) => <li key={i}>{reason}</li>)}</ul>}<div className="stock-research-positions"><div><strong>准备新开仓</strong><p>{report.decision.new_position}</p></div><div><strong>已有仓位{report.request.cost_price ? ` · 成本 ${report.request.cost_price.toFixed(2)} 元` : ''}</strong><p>{report.decision.existing_position}</p></div></div>
 		{plan && <div className="stock-research-prices">{[['介入参考', plan.entry_anchor], ['失效参考', plan.stop_anchor], ['压力参考', plan.target_anchor]].map(([label, id]) => { const anchor = report.anchors.find((item) => item.id === id); return <div key={label}><span>{label}</span><strong>{anchor ? `${anchor.price.toFixed(2)} 元` : '没有充分依据'}</strong>{anchor && <button type="button" onClick={() => onSource(anchor.source_id)}>{anchor.label}<ArrowUpRight size={12} /></button>}</div>; })}</div>}
 	</ResearchPanel>;
 }

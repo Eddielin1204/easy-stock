@@ -24,6 +24,12 @@ func (s *Server) portfolioInspectionCreate(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
+	if request.SourceOptimizationID != "" {
+		if err := s.portfolioOptimization.ValidateApplication(r.Context(), request); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	job, err := s.portfolioInspection.Start(r.Context(), request)
 	if err != nil {
 		status := http.StatusBadRequest

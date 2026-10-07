@@ -102,6 +102,9 @@ func (r *CodexRuntime) renderConfiguration(options PromptOptions) (string, map[s
 	var b strings.Builder
 	fmt.Fprintf(&b, "model = %s\nmodel_provider = \"easy-stock\"\nweb_search = \"disabled\"\ncheck_for_update_on_startup = false\ncli_auth_credentials_store = \"ephemeral\"\n", strconv.Quote(cfg.Model))
 	effort := settings.ReasoningEffort
+	if options.Sandbox && options.ReasoningEffortCap != "" {
+		effort = cappedReasoningEffort(effort, options.ReasoningEffortCap, settings.Reasoning)
+	}
 	// Native Responses toggles (e.g. MiniMax M3) use any non-none effort
 	// to enable thinking. Keep the shared UI as a toggle, not fake levels.
 	if effort == "enabled" && settings.Reasoning.Wire == "openai_responses" {

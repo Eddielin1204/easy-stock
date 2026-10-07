@@ -8,7 +8,8 @@ import (
 	"easy-stock/backend/internal/foundation"
 )
 
-const ResearchPromptVersion = "stock-research-v7"
+const ResearchPromptVersion = "stock-research-v8"
+const ResearchValidationVersion = "stock-research-validation-v3"
 
 type ResearchRequest struct {
 	Symbol        string        `json:"symbol"`
@@ -136,6 +137,7 @@ type ResearchDecision struct {
 	ExistingPosition string             `json:"existing_position"`
 	Reason           string             `json:"reason"`
 	PricePlan        *AnchoredPricePlan `json:"price_plan,omitempty"`
+	Blockers         []string           `json:"blockers,omitempty"`
 }
 
 type ResearchSynthesis struct {
@@ -201,21 +203,22 @@ type ResearchPromptCompression struct {
 type ResearchReport struct {
 	Runtime string `json:"runtime,omitempty"`
 	ResearchSynthesis
-	SnapshotID      string                    `json:"snapshot_id"`
-	SnapshotVersion int                       `json:"snapshot_version"`
-	PromptVersion   string                    `json:"prompt_version"`
-	Request         ResearchRequest           `json:"request"`
-	AnalysisLevel   ResearchLevel             `json:"analysis_level"`
-	Model           string                    `json:"model"`
-	GeneratedAt     time.Time                 `json:"generated_at"`
-	CutoffAt        time.Time                 `json:"cutoff_at"`
-	Sources         []ResearchSource          `json:"sources"`
-	Anchors         []PriceAnchor             `json:"anchors"`
-	Questions       []ResearchQuestion        `json:"questions"`
-	Attempts        []ResearchAttempt         `json:"attempts"`
-	Compression     ResearchPromptCompression `json:"compression"`
-	Validation      string                    `json:"validation"`
-	ValidationNotes []string                  `json:"validation_notes"`
+	SnapshotID        string                    `json:"snapshot_id"`
+	SnapshotVersion   int                       `json:"snapshot_version"`
+	PromptVersion     string                    `json:"prompt_version"`
+	Request           ResearchRequest           `json:"request"`
+	AnalysisLevel     ResearchLevel             `json:"analysis_level"`
+	Model             string                    `json:"model"`
+	GeneratedAt       time.Time                 `json:"generated_at"`
+	CutoffAt          time.Time                 `json:"cutoff_at"`
+	Sources           []ResearchSource          `json:"sources"`
+	Anchors           []PriceAnchor             `json:"anchors"`
+	Questions         []ResearchQuestion        `json:"questions"`
+	Attempts          []ResearchAttempt         `json:"attempts"`
+	Compression       ResearchPromptCompression `json:"compression"`
+	Validation        string                    `json:"validation"`
+	ValidationVersion string                    `json:"validation_version,omitempty"`
+	ValidationNotes   []string                  `json:"validation_notes"`
 }
 
 type SupplementFunc func(context.Context, ResearchSnapshot, ResearchQuestion) ([]ResearchSource, error)

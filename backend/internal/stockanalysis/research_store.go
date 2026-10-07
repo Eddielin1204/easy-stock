@@ -29,6 +29,7 @@ type ResearchJob struct {
 	Checkpoint      *ResearchCheckpoint   `json:"checkpoint,omitempty"`
 	ResumedFrom     string                `json:"resumed_from,omitempty"`
 	ResumeAvailable bool                  `json:"resume_available,omitempty"`
+	Budget          *ResearchBudget       `json:"budget,omitempty"`
 }
 
 type ResearchJobSummary struct {

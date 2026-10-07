@@ -122,7 +122,7 @@ func (s *ResearchStore) findReusable(ctx context.Context, symbol string, asOf, u
 			return ResearchJob{}, err
 		}
 		if SuccessfulResearch(job) {
-			return job, nil
+			return RevalidateReusableResearch(job), nil
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -171,7 +171,7 @@ func (s *ResearchService) ResolveForPortfolio(ctx context.Context, request Resea
 			return job, "shared_running", nil
 		}
 		if !force && SuccessfulResearch(job) && asOf.Sub(ResearchCompletedAt(job)) < ResearchReuseWindow && !ResearchCompletedAt(job).After(asOf) {
-			return job, "reused", nil
+			return RevalidateReusableResearch(job), "reused", nil
 		}
 	}
 	var resume *ResearchJob

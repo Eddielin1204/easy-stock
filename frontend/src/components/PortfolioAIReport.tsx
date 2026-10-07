@@ -1,10 +1,12 @@
 import { Activity, BrainCircuit, CircleAlert, ExternalLink, GitBranch, HeartPulse, History, ListChecks, Plus, Scale, ShieldCheck, WalletCards } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { PortfolioEvidenceRef, PortfolioInspectionReport, StockAIAnalysis } from '../lib/backend';
+import { portfolioScoringVersion } from '../lib/portfolio-optimization';
 import { safeResearchURL } from '../lib/stock-research';
 import { ResearchPanel } from './StockResearchReport';
 
-type Props = { report: PortfolioInspectionReport; onNew: () => void; onOpenStockAnalysis: (analysis: StockAIAnalysis) => void; onRefresh: (symbol: string) => void; busy?: boolean };
-export function PortfolioAIReportView({ report, onNew, onOpenStockAnalysis, onRefresh, busy }: Props) {
+type Props = { report: PortfolioInspectionReport; onNew: () => void; onOpenStockAnalysis: (analysis: StockAIAnalysis) => void; onRefresh: (symbol: string) => void; busy?: boolean; onOptimize?: () => void; afterSummary?: ReactNode };
+export function PortfolioAIReportView({ report, onNew, onOpenStockAnalysis, onRefresh, busy, onOptimize, afterSummary }: Props) {
  const { conclusion: ai, metrics } = report;
  const coverage = metrics.ai_research_coverage_percent ?? 0;
  const successful = report.holdings.filter((r) => r.status === 'succeeded' && r.analysis?.ai.status === 'ready').length;
@@ -16,9 +18,11 @@ export function PortfolioAIReportView({ report, onNew, onOpenStockAnalysis, onRe
  return <div className="portfolio-report stock-research-report portfolio-ai-report">
   <header className={`stock-ai-verdict portfolio-report-verdict ${ai.risk_level.includes('高') || ai.risk_level === '中' ? 'risk' : 'strong'}`}>
    <div className="stock-ai-identity"><span>持仓 AI 分析</span><h2>{report.profile.label}型组合</h2><small>{portfolioDate(report.generated_at)} · {horizonLabel(report.request?.horizon)}</small></div>
-   <div className="stock-ai-conclusion"><div className="stock-ai-tags"><span>{ai.risk_level === '待评估' ? '风险待评估' : `${ai.risk_level}风险`}</span><span>AI 研究 {successful}/{report.holdings.length} 只 · {coverage}% 持仓</span><span>复用 {reused} 份 · 新研究 {fresh} 份</span></div><h3>组合综合评分 <strong>{score}{typeof score === 'number' && <small> / 100</small>}</strong></h3><p>{ai.executive_summary}</p><small>风险判断：{ai.risk_reason || '组合评估尚未完成'}</small><div className="portfolio-confidence"><BrainCircuit size={14} />置信度：{ai.confidence_level || '待评估'} · {ai.confidence_reason || '已有成功报告已保留，可恢复任务'}</div></div>
-   <div className="stock-ai-verdict-actions"><button type="button" className="primary" disabled={busy} onClick={onNew}><Plus size={15} />新建分析</button></div>
+   <div className="stock-ai-conclusion"><div className="stock-ai-tags"><span>{ai.risk_level === '待评估' ? '风险待评估' : `${ai.risk_level}风险`}</span><span>AI 研究 {successful}/{report.holdings.length} 只 · {coverage}% 持仓</span><span>复用 {reused} 份 · 新研究 {fresh} 份</span></div><h3>{report.algorithm_version === portfolioScoringVersion ? '股票组合健康度' : '组合综合评分'} <strong>{score}{typeof score === 'number' && <small> / 100</small>}</strong></h3><p>{ai.executive_summary}</p><small>风险判断：{ai.risk_reason || '组合评估尚未完成'}</small></div>
+   <div className="stock-ai-verdict-actions">{onOptimize && <button type="button" className="primary" disabled={busy} onClick={onOptimize}><BrainCircuit size={15} />AI 优化持仓</button>}<button type="button" className="primary" disabled={busy} onClick={onNew}><Plus size={15} />新建分析</button></div>
   </header>
+  {afterSummary}
+  {ai.score_available && <p className="portfolio-scoring-scope">{report.algorithm_version === portfolioScoringVersion ? '评分仅评价股票组合：总仓位、满仓和现金比例不加扣分；集中度按股票内部配比评价。60分基本可用，70分整体合理，80分较好。' : '此报告使用历史评分口径；重新评估后采用不计总仓位和现金比例的新口径。'}</p>}
   {ai.score_available && <section className="stock-ai-kpis portfolio-score-dimensions" aria-label="组合 AI 四维评分">
    {(ai.dimensions || []).map((d, i) => <article key={d.key} className={`stock-ai-kpi ${['blue', 'purple', 'amber', 'green'][i]}`}><div>{i === 0 ? <HeartPulse size={17} /> : i === 1 ? <Scale size={17} /> : i === 2 ? <ShieldCheck size={17} /> : <Activity size={17} />}{d.label}</div><strong>{d.score}</strong><small>权重 {d.weight}%</small><p>{d.reason}</p><details><summary>评分依据与来源</summary>{(d.adjustments || []).map((a, i) => <p key={i}><b>{a.points > 0 ? '+' : ''}{a.points} · </b>{a.reason}</p>)}{(d.limitations || []).map((l, i) => <div className="portfolio-evidence-limitation" key={i}><p>{l}</p><ExplanationEvidence report={report} path={`dimensions.${d.key}.limitations[${i}]`} /></div>)}<PortfolioEvidence refs={d.evidence_refs || []} report={report} /></details></article>)}
   </section>}
@@ -55,7 +59,7 @@ export function PortfolioAIReportView({ report, onNew, onOpenStockAnalysis, onRe
   <footer className="stock-research-footer">评分是当前证据下的研究评价，不表示胜率或预期收益。仅用于研究与复盘。</footer>
  </div>;
 }
-function PortfolioEvidence({ refs, report }: { refs: PortfolioEvidenceRef[]; report: PortfolioInspectionReport }) {
+export function PortfolioEvidence({ refs, report }: { refs: PortfolioEvidenceRef[]; report: PortfolioInspectionReport }) {
  return <div className="portfolio-evidence">{refs.map((ref, i) => {
   if (ref.fact) { const f = report.facts?.[ref.fact]; return <details key={i}><summary>{f?.method || ref.fact}</summary><p>{f?.available ? displayFact(f.value) : '未知'} · {portfolioDate(f?.as_of)}</p>{f?.limitation && <small>{f.limitation}</small>}</details>; }
   const r = report.holdings.find((r) => r.analysis_id === ref.report_id);
@@ -77,7 +81,7 @@ export function originLabel(value?: string) { return ({ reused: '复用成功报
 export function horizonLabel(value?: string) { return ({ short: '超短', swing: '波段', medium: '中期' }[value || ''] || '未指定'); }
 function levelLabel(value?: string) { return ({ quick: '快速', standard: '标准', deep: '深度' }[value || ''] || 'AI 研究'); }
 function factLabel(key: string, names: Map<string, string>) {
- const labels: Record<string, string> = { total_position_percent: '总仓位 %', cash_percent: '现金 %', max_single_percent: '最大单票仓位 %', top_three_percent: '前三大仓位 %', concentration_hhi: '持仓集中度 HHI', ai_research_coverage_percent: 'AI 研究覆盖 %', stop_loss_coverage_percent: '静态止损覆盖 %', known_stop_loss_risk_percent: '已知止损损失占总资产 %', weight_percent: '仓位 %', cost_price: '成本', price: '行情价格', pnl_percent: '成本盈亏 %', atr_14_percent: '14 日 ATR %', historical_drawdown_percent: '历史收盘回撤 %' };
+ const labels: Record<string, string> = { total_position_percent: '总仓位 %', cash_percent: '现金 %', max_single_percent: '最大单票仓位 %', top_three_percent: '前三大仓位 %', equity_max_single_percent: '最大单票占股票持仓 %', equity_top_three_percent: '前三大占股票持仓 %', equity_weight_percent: '占股票持仓 %', equity_known_stop_loss_risk_percent: '已知止损损失占股票持仓 %', concentration_hhi: '持仓集中度 HHI', ai_research_coverage_percent: 'AI 研究覆盖 %', stop_loss_coverage_percent: '静态止损覆盖 %', known_stop_loss_risk_percent: '已知止损损失占总资产 %', weight_percent: '仓位 %', cost_price: '成本', price: '行情价格', pnl_percent: '成本盈亏 %', atr_14_percent: '14 日 ATR %', historical_drawdown_percent: '历史收盘回撤 %' };
  if (key.startsWith('correlation.')) { const symbols = [...names.keys()].filter((s) => key.includes(s)); return `历史相关性 · ${symbols.map((s) => names.get(s)).join(' / ')}`; }
  for (const [symbol, name] of names) { if (key.startsWith(`${symbol}.`)) return `${name} · ${labels[key.slice(symbol.length + 1)] || key}`; }
  return labels[key] || key;

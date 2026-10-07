@@ -9,8 +9,8 @@ import (
 
 const (
 	MaxHoldings        = 10
-	PromptVersion      = "portfolio-inspection-v3"
-	AlgorithmVersion   = "portfolio-ai-score-v3"
+	PromptVersion      = "portfolio-inspection-v4"
+	AlgorithmVersion   = "portfolio-ai-score-v4"
 	MinimumAICoverage  = 70
 	DefaultConcurrency = 2
 )
@@ -43,11 +43,12 @@ type Holding struct {
 }
 
 type Request struct {
-	TraderProfile TraderProfile               `json:"trader_profile"`
-	Holdings      []Holding                   `json:"holdings"`
-	Horizon       string                      `json:"horizon,omitempty"`
-	ResearchLevel stockanalysis.ResearchLevel `json:"research_level,omitempty"`
-	ForceSymbols  []string                    `json:"force_symbols,omitempty"`
+	SourceOptimizationID string                      `json:"source_optimization_id,omitempty"`
+	TraderProfile        TraderProfile               `json:"trader_profile"`
+	Holdings             []Holding                   `json:"holdings"`
+	Horizon              string                      `json:"horizon,omitempty"`
+	ResearchLevel        stockanalysis.ResearchLevel `json:"research_level,omitempty"`
+	ForceSymbols         []string                    `json:"force_symbols,omitempty"`
 }
 
 type HoldingResult struct {

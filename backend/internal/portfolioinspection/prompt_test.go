@@ -12,7 +12,7 @@ func TestBuildPromptUsesAIResearchRubric(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{`"prompt_version":"portfolio-inspection-v3"`, `"scoring_version":"portfolio-ai-score-v3"`, "holding_logic", "不得调用工具", "没有静态止损价不阻断评分"} {
+	for _, expected := range []string{`"prompt_version":"portfolio-inspection-v4"`, `"scoring_version":"portfolio-ai-score-v4"`, "holding_logic", "不得调用工具", "没有静态止损价不阻断评分"} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("missing %s", expected)
 		}
