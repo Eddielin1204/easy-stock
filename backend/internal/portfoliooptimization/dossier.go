@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const ModelPromptVersion = "portfolio-optimization-prompts-v30"
+const ModelPromptVersion = "portfolio-optimization-prompts-v31"
 const MaxModelPromptBytes = 32 * 1024
 
 // Proposal responses contain all stock judgments. Reviews contain two concise

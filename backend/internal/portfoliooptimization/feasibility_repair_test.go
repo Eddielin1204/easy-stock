@@ -185,7 +185,7 @@ func (g *feasibilityGateway) Prompt(ctx context.Context, prompt string) (agent.P
 	return agent.PromptResult{Content: g.proposal + "\n```"}, nil
 }
 
-func TestFeasibilityRepairAfterSyntaxFailureUsesOneBoundedPatch(t *testing.T) {
+func TestFeasibilityRepairUsesBoundedOperationLoop(t *testing.T) {
 	for _, tc := range []struct {
 		name                              string
 		badSyntax, failPatch, alreadyUsed bool
@@ -211,14 +211,12 @@ func TestFeasibilityRepairAfterSyntaxFailureUsesOneBoundedPatch(t *testing.T) {
 					}
 				}
 			}
-			if tc.alreadyUsed {
-				if count != 0 || err == nil {
-					t.Fatal("repeated feasibility repair")
-				}
-				return
+			expected := 1
+			if tc.failPatch {
+				expected = 3
 			}
-			if count != 1 || !j.RangeRepairUsed || jobRepairUsed(&j) != tc.badSyntax {
-				t.Fatal("repair counts changed", count, j.Limitations)
+			if count != expected || !j.RangeRepairUsed || !jobRepairUsed(&j) {
+				t.Fatal("unexpected bounded repairs", count, j.Limitations)
 			}
 			for _, a := range j.ModelAttempts {
 				if a.Stage == "proposing" && a.BudgetMS > 5*time.Minute.Milliseconds() {

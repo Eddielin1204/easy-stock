@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const Version = "portfolio-optimization-v22"
+const Version = "portfolio-optimization-v23"
 const TargetPortfolioScore = 70
 const MinimumPortfolioScore = 65
 const MinimumFallbackImprovement = 5
@@ -23,6 +23,7 @@ const TotalTimeout = 24 * time.Minute
 const ModelTimeout = 8 * time.Minute
 
 type Request struct {
+	RestartFrom      string   `json:"restart_from,omitempty"`
 	CandidateSymbols []string `json:"candidate_symbols,omitempty"`
 }
 type Candidate struct {
@@ -197,6 +198,7 @@ type FundingTransfer struct {
 	Weight     int    `json:"weight_percent"`
 }
 type Plan struct {
+	ReviewCheckpoint *ReviewCheckpoint `json:"review_checkpoint,omitempty"`
 	RejectionReasons []string          `json:"rejection_reasons,omitempty"`
 	RiskChecks       []RiskCheck       `json:"risk_checks,omitempty"`
 	Search           *AllocationSearch `json:"allocation_search,omitempty"`
@@ -229,6 +231,12 @@ type RiskCheck struct {
 	Basis   string   `json:"basis"`
 }
 type Job struct {
+	ExecutionDurationMS int64 `json:"execution_duration_ms"`
+	executionTick       time.Time
+	ModelLoops          map[string]*ModelLoopState `json:"model_loops,omitempty"`
+	ProposalCheckpoint  *ProposalCheckpoint        `json:"proposal_checkpoint,omitempty"`
+	CheckpointProgress  *CheckpointProgress        `json:"checkpoint_progress,omitempty"`
+
 	RangeRepairUsed      bool                 `json:"range_repair_used,omitempty"`
 	FallbackPlan         *Plan                `json:"fallback_plan,omitempty"`
 	InvestmentBaseline   *Proposal            `json:"investment_baseline,omitempty"`

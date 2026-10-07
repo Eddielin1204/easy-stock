@@ -260,6 +260,11 @@ func optimizationReasoningCap(stage string) string {
 }
 
 func modelRepairPrompt(prompt, output string, validationErr error) string {
+	var reviewError *reviewPartsError
+	if errors.As(validationErr, &reviewError) {
+		return reviewError.prompt(prompt)
+	}
+
 	var partsError *proposalPartsError
 	if errors.As(validationErr, &partsError) {
 		return partsError.prompt(prompt)
@@ -362,14 +367,67 @@ type modelValidationError struct{ cause error }
 func (e *modelValidationError) Error() string { return e.cause.Error() }
 func (e *modelValidationError) Unwrap() error { return e.cause }
 
-func (s *Service) model(ctx context.Context, job *Job, prompt string, validate func(string) error) error {
+func (s *Service) model(ctx context.Context, job *Job, original string, validate func(string) error) error {
 	if job.ModelStageDurationMS == nil {
 		job.ModelStageDurationMS = map[string]int64{}
 	}
+	if job.ModelLoops == nil {
+		job.ModelLoops = map[string]*ModelLoopState{}
+	}
 	budgetKey := modelBudgetKey(*job)
+	key := budgetKey + ":" + fingerprint(original)
+	state := job.ModelLoops[key]
+	if state == nil {
+		state = &ModelLoopState{NextPrompt: original}
+		job.ModelLoops[key] = state
+	}
+	// Rebuild the callback's frozen state in order; never call the model for saved responses.
+	var lastErr error
+	for i, output := range state.Outputs {
+		lastErr = validate(output)
+		if i >= state.ProcessedOutputs {
+			if lastErr != nil {
+				if state.LastError == lastErr.Error() {
+					state.RepeatedFailure++
+				} else {
+					state.RepeatedFailure = 1
+				}
+				state.LastError = lastErr.Error()
+				next, e := nextRepairPrompt(ctx, job, state, original, output, lastErr)
+				if e != nil {
+					return e
+				}
+				state.NextPrompt = next
+				if len(job.ModelAttempts) > 0 {
+					job.ModelAttempts[len(job.ModelAttempts)-1].Error = lastErr.Error()
+				}
+			}
+			state.ProcessedOutputs = i + 1
+			if e := s.save(job); e != nil {
+				return e
+			}
+		}
+	}
+	if len(state.Outputs) > 0 && lastErr == nil {
+		state.Completed = true
+		return s.save(job)
+	}
+	if state.NextPrompt == "" && lastErr != nil && state.Stopped == "" {
+		var err error
+		state.NextPrompt, err = nextRepairPrompt(ctx, job, state, original, state.Outputs[len(state.Outputs)-1], lastErr)
+		if err != nil {
+			return err
+		}
+	}
+	if state.Stopped != "" {
+		return &modelValidationError{cause: errors.New(state.Stopped)}
+	}
 	remaining := ModelTimeout - time.Duration(job.ModelStageDurationMS[budgetKey])*time.Millisecond
 	if remaining <= 0 {
 		return errors.New("当前模型阶段已用完8分钟预算，已保存检查点")
+	}
+	if total := remainingExecution(*job); total < remaining {
+		remaining = total
 	}
 	if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < remaining {
 		remaining = time.Until(deadline)
@@ -379,28 +437,48 @@ func (s *Service) model(ctx context.Context, job *Job, prompt string, validate f
 	if job.ModelStartedAt.IsZero() {
 		job.ModelStartedAt = time.Now().UTC()
 	}
-	repair, rangeRepair, transportRetries := false, false, 0
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		prompt := state.NextPrompt
 		if len(prompt) > MaxModelPromptBytes {
 			return fmt.Errorf("当前阶段输入%d字节超过%d KiB上限，未发送模型", len(prompt), MaxModelPromptBytes/1024)
 		}
-		if repair && !jobRepairUsed(job) {
-			job.Limitations = append(job.Limitations, "已使用一次模型格式/一致性修复")
-		}
-		if rangeRepair && !job.RangeRepairUsed {
-			job.RangeRepairUsed = true
-			job.Limitations = append(job.Limitations, "已使用一次仓位范围可行性修复；投资判断、股票和资金权限冻结，沿用本阶段及总耗时预算")
+		repairing := len(state.Outputs) > 0
+		if repairing {
+			if state.RepairCalls >= MaxOperationRepairs || state.RepeatedFailure >= MaxRepeatedFailure {
+				state.Stopped = fmt.Sprintf("局部纠错已停止（修复%d次，同一错误连续%d次），保留已通过的结果：%s", state.RepairCalls, state.RepeatedFailure, state.LastError)
+				if err := s.save(job); err != nil {
+					return err
+				}
+				return &modelValidationError{cause: errors.New(state.Stopped)}
+			}
+			state.RepairCalls++
+			if !jobRepairUsed(job) {
+				job.Limitations = append(job.Limitations, "已启用局部纠错：每个操作最多4次，同一错误连续3次停止；成功条目独立保存")
+			}
+			if state.RepairKind == "ranges" {
+				job.RangeRepairUsed = true
+			}
 		}
 		started := time.Now()
-		job.ModelPromptVersion = ModelPromptVersion
-		job.ModelPromptBytes = len(prompt)
-		callBudget := remaining
-		if deadline, ok := ctx.Deadline(); ok {
-			callBudget = time.Until(deadline)
-		}
+		job.ModelPromptVersion, job.ModelPromptBytes = ModelPromptVersion, len(prompt)
+		deadline, _ := ctx.Deadline()
+		callBudget := time.Until(deadline)
+		state.InFlight = &ModelFlight{StartedAt: started, BudgetMS: callBudget.Milliseconds(), BudgetKey: budgetKey}
 		var progressMu sync.Mutex
 		var progress agent.PromptProgress
 		var lastSaved time.Time
+		var accounted int64
+		account := func() {
+			elapsed := time.Since(started).Milliseconds()
+			delta := max(int64(0), elapsed-accounted)
+			job.ModelDurationMS += delta
+			job.ModelStageDurationMS[budgetKey] += delta
+			accounted += delta
+			state.InFlight.AccountedMS = accounted
+		}
 		job.ModelProgress = agent.PromptProgress{}
 		if err := s.save(job); err != nil {
 			return err
@@ -411,6 +489,7 @@ func (s *Service) model(ctx context.Context, job *Job, prompt string, validate f
 			progress = p
 			if lastSaved.IsZero() || time.Since(lastSaved) >= 20*time.Second {
 				job.ModelProgress = p
+				account()
 				_ = s.save(job)
 				lastSaved = time.Now()
 			}
@@ -420,24 +499,27 @@ func (s *Service) model(ctx context.Context, job *Job, prompt string, validate f
 			progress = response.Progress
 		}
 		job.ModelProgress = progress
+		account()
 		progressMu.Unlock()
+		state.InFlight = nil
 		metric := ModelAttempt{Stage: job.Stage, Round: job.RevisionCount + 1, DurationMS: time.Since(started).Milliseconds(), PromptBytes: len(prompt), ResponseBytes: len(response.Content), Progress: progress, BudgetMS: callBudget.Milliseconds(), PromptVersion: ModelPromptVersion}
 		if err != nil {
 			metric.Error = err.Error()
 		}
 		job.ModelAttempts = append(job.ModelAttempts, metric)
-		job.ModelDurationMS += metric.DurationMS
-		job.ModelStageDurationMS[budgetKey] += metric.DurationMS
-		if saveErr := s.save(job); saveErr != nil {
-			return saveErr
-		}
 		if err != nil {
-			if errors.Is(err, agent.ErrModelTransport) && transportRetries == 0 && ctx.Err() == nil {
-				transportRetries++
-				job.Limitations = append(job.Limitations, "模型临时连接失败，按相同输入仅重试一次；计入本阶段8分钟及总24分钟预算，不重新选股")
-				job.Message = "模型连接中断，保留方案与资料，正在重试本阶段"
-				if saveErr := s.save(job); saveErr != nil {
-					return saveErr
+			if saveErr := s.save(job); saveErr != nil {
+				return saveErr
+			}
+			if errors.Is(err, agent.ErrModelTransport) && state.TransportRetries == 0 && ctx.Err() == nil {
+				state.TransportRetries++
+				// A transport retry is not another content repair, but consumes elapsed budget.
+				if repairing {
+					state.RepairCalls--
+				}
+				job.Message = "模型连接中断，保留资料和已通过的条目，重试当前请求"
+				if e := s.save(job); e != nil {
+					return e
 				}
 				timer := time.NewTimer(time.Second)
 				select {
@@ -457,43 +539,47 @@ func (s *Service) model(ctx context.Context, job *Job, prompt string, validate f
 			}
 			return fmt.Errorf("持仓优化模型失败：%w", err)
 		}
-		if err = validate(response.Content); err == nil {
-			return nil
+		if len(response.Content) > MaxSavedResponseBytes {
+			state.Stopped = "模型正文超过128 KiB保存上限，未采用该输出"
+			job.ModelAttempts[len(job.ModelAttempts)-1].Error = state.Stopped
+			if e := s.save(job); e != nil {
+				return e
+			}
+			return &modelValidationError{cause: errors.New(state.Stopped)}
+		}
+		state.Outputs = append(state.Outputs, response.Content)
+		// Write the response before validation/solving so a crash cannot lose it.
+		if e := s.save(job); e != nil {
+			return e
+		}
+		err = validate(response.Content)
+		state.ProcessedOutputs = len(state.Outputs)
+		if err == nil {
+			state.Completed = true
+			state.NextPrompt = ""
+			return s.save(job)
 		}
 		job.ModelAttempts[len(job.ModelAttempts)-1].Error = err.Error()
-		var rangeErr *programRangeRepairError
-		if job.Stage == "proposing" && job.RevisionCount == 0 && errors.As(err, &rangeErr) {
-			if job.RangeRepairUsed {
-				return &modelValidationError{cause: err}
-			}
-			prompt, err = feasibilityRepairPrompt(ctx, *job, rangeErr.proposal, rangeErr.cause)
-			if err != nil {
-				return err
-			}
-			job.Message = "投资判断已保留，正在修复仓位范围，使配仓满足总仓位和风险约束"
-			rangeRepair, repair = true, false
-			continue
+		if state.LastError == err.Error() {
+			state.RepeatedFailure++
+		} else {
+			state.RepeatedFailure = 1
 		}
-		if rangeRepair || jobRepairUsed(job) || repair {
-			return &modelValidationError{cause: err}
+		state.LastError = err.Error()
+		var nextErr error
+		state.NextPrompt, nextErr = nextRepairPrompt(ctx, job, state, original, response.Content, err)
+		if saveErr := s.save(job); saveErr != nil {
+			return saveErr
 		}
-		output := response.Content
-		var compact bytes.Buffer
-		if json.Compact(&compact, []byte(output)) == nil {
-			output = compact.String()
+		if nextErr != nil {
+			return nextErr
 		}
-		prompt = modelRepairPrompt(prompt, output, err)
-		var partsError *proposalPartsError
-		if errors.As(err, &partsError) {
-			job.Message = fmt.Sprintf("已保留正常分析，正在局部补齐%d个错误或缺失条目", len(partsError.parts))
-		}
-		repair = true
 	}
-
 }
+
 func jobRepairUsed(job *Job) bool {
 	for _, l := range job.Limitations {
-		if l == "已使用一次模型格式/一致性修复" {
+		if l == "已使用一次模型格式/一致性修复" || l == "已启用局部纠错：每个操作最多4次，同一错误连续3次停止；成功条目独立保存" {
 			return true
 		}
 	}

@@ -126,7 +126,7 @@ func (g *scopeRepairGateway) Prompt(_ context.Context, prompt string) (agent.Pro
 	g.repairPrompt = prompt
 	return agent.PromptResult{Content: g.repaired}, nil
 }
-func TestScopeRepairUsesExistingSingleRepairBudget(t *testing.T) {
+func TestScopeRepairStopsAfterRepeatedFailure(t *testing.T) {
 	for _, repeated := range []bool{false, true} {
 		j, old, target := scopeFixture(t)
 		j.ID = "scope-test"
@@ -151,7 +151,11 @@ func TestScopeRepairUsesExistingSingleRepairBudget(t *testing.T) {
 			}
 			return checkReviewScopes(v.A, v.B, target, old)
 		})
-		if (err != nil) != repeated || g.calls.Load() != 2 || !jobRepairUsed(&j) {
+		expected := int32(2)
+		if repeated {
+			expected = 3
+		}
+		if (err != nil) != repeated || g.calls.Load() != expected || !jobRepairUsed(&j) {
 			t.Fatal("wrong retry budget", g.calls.Load(), err)
 		}
 		if !repeated && !strings.Contains(g.repairPrompt, "actual_holdings") {

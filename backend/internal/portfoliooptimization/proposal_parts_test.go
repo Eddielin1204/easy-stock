@@ -66,7 +66,7 @@ func TestProposalPartsCollectsMissingRowsAndBadReferencesTogether(t *testing.T) 
 	}
 	repairPrompt := modelRepairPrompt(prompt, strings.Repeat("full output must not be resent", 10000), parts)
 	_, payload, _ := strings.Cut(prompt, "[资料JSON]\n")
-	if len(repairPrompt) > MaxModelPromptBytes || !strings.Contains(repairPrompt, payload) || strings.Contains(repairPrompt, "full output") || !strings.Contains(repairPrompt, "不将PB/利润转正推算为PE") {
+	if len(repairPrompt) > MaxModelPromptBytes || !strings.Contains(repairPrompt, payload) || strings.Contains(repairPrompt, "full output") || strings.Contains(strings.Split(repairPrompt, "[待补项]\n")[1], `"index":`) || !strings.Contains(repairPrompt, "不将PB/利润转正推算为PE") {
 		t.Fatal("repair changed frozen data or resent full output", len(repairPrompt))
 	}
 	updated, err := repairProposalParts(context.Background(), j, parts, partsPatch(t, map[string]any{
@@ -212,7 +212,11 @@ func TestProposalPartsUsesExistingRepairAndStageBudget(t *testing.T) {
 				count++
 			}
 		}
-		if count != 1 || !jobRepairUsed(&j) {
+		expected := 1
+		if fail {
+			expected = 2
+		}
+		if count != expected || !jobRepairUsed(&j) {
 			t.Fatal("repair allowance changed", count)
 		}
 		for _, a := range j.ModelAttempts {

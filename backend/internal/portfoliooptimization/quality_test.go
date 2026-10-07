@@ -204,11 +204,11 @@ func TestOneInvocationSearchesBeyondAIReferenceAndStopsOnQualifiedReview(t *test
 	}
 }
 
-func TestInvalidReviewDoesNotEndDifferentAllocationSearch(t *testing.T) {
+func TestInvalidReviewDoesNotSampleOtherConfigurations(t *testing.T) {
 	g := &testGateway{}
 	s, _, _ := setupService(t, g)
 	j, alt := searchFixture(t)
-	j.ID, j.Version, j.Fingerprint = "skip-invalid", Version, "ab"
+	j.ID, j.Version, j.Fingerprint = "stop-invalid", Version, "ab"
 	j.Proposal, j.SnapshotAt = nil, time.Now()
 	p := Proposal{Alternatives: []Alternative{alt}}
 	q := &qualityGateway{testGateway: g, proposal: &p, scores: []int{60, 60, 74}, invalidReviews: 2}
@@ -216,11 +216,20 @@ func TestInvalidReviewDoesNotEndDifferentAllocationSearch(t *testing.T) {
 	if err := s.execute(context.Background(), &j); err != nil {
 		t.Fatal(err)
 	}
-	if j.SelectedPlan == nil || q.proposals != 1 || q.reviews != 3 || !jobRepairUsed(&j) || j.Plans[0].Status != "invalid_review" || j.Plans[0].Assessment != nil {
-		t.Fatal("invalid review ended search or became accepted", j.Outcome, j.Plans, q.reviews)
+	if j.SelectedPlan != nil || q.proposals != 1 || q.reviews != 3 || j.RevisionCount != 0 || j.Outcome != "review_invalid" {
+		t.Fatal("invalid review triggered another configuration", j.Outcome, q.reviews)
 	}
-	if *j.Plans[*j.SelectedPlan].Proposed.Conclusion.TotalScore != 74 || !materiallyDifferent(j.Plans[0].Target, j.Plans[*j.SelectedPlan].Target) {
-		t.Fatal("same target was resampled")
+	invalid := 0
+	for _, p := range j.Plans {
+		if p.Status == "invalid_review" {
+			invalid++
+		}
+		if p.Assessment != nil {
+			t.Fatal("unrepaired score was adopted")
+		}
+	}
+	if invalid != 1 {
+		t.Fatal("more than one configuration reviewed", invalid)
 	}
 }
 
@@ -416,7 +425,7 @@ func TestBelowMinimumSavedTargetCannotBypassApplication(t *testing.T) {
 	}
 }
 
-func TestRevisionCannotResetRepairBudgetOrRiskGroups(t *testing.T) {
+func TestRevisionHasOwnBoundedRepairButCannotRewriteRiskGroups(t *testing.T) {
 	g := &testGateway{}
 	s, _, _ := setupService(t, g)
 	q := &qualityGateway{testGateway: g, repair: true}
@@ -427,8 +436,8 @@ func TestRevisionCannotResetRepairBudgetOrRiskGroups(t *testing.T) {
 	j.RevisionCount = 1
 	j.RevisionHistory = []RevisionRound{{RiskGroups: nil, Assessment: &Assessment{}}}
 	j.Limitations = append(j.Limitations, "已使用一次模型格式/一致性修复")
-	if err := s.model(context.Background(), &j, "invalid revision", func(string) error { return json.Unmarshal([]byte("invalid"), new(any)) }); err == nil || g.calls.Load() != 1 {
-		t.Fatal("repair budget reset", err, g.calls.Load())
+	if err := s.model(context.Background(), &j, "invalid revision", func(string) error { return json.Unmarshal([]byte("invalid"), new(any)) }); err == nil || g.calls.Load() != 3 {
+		t.Fatal("operation repair bound changed", err, g.calls.Load())
 	}
 	p := fixtureProposal()
 	p.RiskGroups = []pi.RiskGroup{{Name: "rewritten"}}

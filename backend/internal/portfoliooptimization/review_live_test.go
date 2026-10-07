@@ -144,6 +144,8 @@ func TestLiveSavedOptimizationReview(t *testing.T) {
 		j.RevisionCount, j.RevisionHistory = 0, nil
 		j.InvestmentBaseline = nil
 		j.RangeRepairUsed = false
+		j.ModelLoops, j.ProposalCheckpoint, j.CheckpointProgress = nil, nil, nil
+		j.ExecutionDurationMS = 0
 		j.Outcome, j.OutcomeReason = "", ""
 		kept := []string{}
 		for _, l := range j.Limitations {
@@ -372,7 +374,7 @@ func TestLiveSavedOptimizationReview(t *testing.T) {
 	defer func() { s.Close(); store.Close() }()
 	remaining := TotalTimeout
 	if continuing {
-		remaining = time.Until(j.ModelStartedAt.Add(TotalTimeout))
+		remaining = remainingExecution(j)
 		if j.ModelStartedAt.IsZero() || remaining <= 0 {
 			t.Fatal("original isolated evaluation deadline exhausted")
 		}
@@ -386,6 +388,7 @@ func TestLiveSavedOptimizationReview(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), remaining)
 	defer cancel()
 	started := time.Now()
+	j.executionTick = started
 	err = s.execute(ctx, &j)
 	if err != nil {
 		j.Error = err.Error()

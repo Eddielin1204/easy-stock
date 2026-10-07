@@ -57,9 +57,13 @@ func NewService(store *pi.Store, gateway agent.Gateway, deps Dependencies) *Serv
 			return s
 		}
 		if j.Status == "running" {
+			settleInterruptedUsage(&j, time.Now().UTC())
 			j.Status = "interrupted"
-			j.ResumeAvailable = true
+			j.ResumeAvailable = checkpointCanResume(j)
 			j.Message = "服务曾重启，已保存研究和方案，可恢复缺失阶段"
+			if !j.ResumeAvailable {
+				j.Message = "服务重启后核对预算已耗尽，保留结果，可重新开始优化"
+			}
 			if err := s.save(&j); err != nil {
 				s.initError = err
 			}
@@ -78,7 +82,13 @@ func baselineHash(hs []pi.Holding) string {
 	return fingerprint(copyHoldings)
 }
 func (s *Service) save(job *Job) error {
-	job.UpdatedAt = time.Now().UTC()
+	now := time.Now().UTC()
+	if !job.executionTick.IsZero() {
+		job.ExecutionDurationMS += max(int64(0), now.Sub(job.executionTick).Milliseconds())
+		job.executionTick = now
+	}
+	updateCheckpointProgress(job)
+	job.UpdatedAt = now
 	data, err := json.Marshal(job)
 	if err != nil {
 		return err
@@ -160,6 +170,15 @@ func (s *Service) Start(ctx context.Context, sourceID string, req Request) (Job,
 	if source.Status != "succeeded" || source.Report == nil || !source.Report.Conclusion.ScoreAvailable || len(source.Report.Conclusion.Dimensions) != 4 || source.Report.AlgorithmVersion != pi.AlgorithmVersion {
 		return Job{}, errors.New("请先补齐或刷新持仓AI巡检，完整四维评分后再优化")
 	}
+	if req.RestartFrom != "" {
+		previous, e := s.Get(ctx, req.RestartFrom)
+		if e != nil {
+			return Job{}, e
+		}
+		if previous.SourceID != sourceID || previous.Status == "running" || previous.ResumeAvailable || previous.Status == "succeeded" && previous.Outcome != "review_invalid" {
+			return Job{}, errors.New("该任务仍可恢复或已有完整结果，无需重新开始")
+		}
+	}
 	report := *source.Report
 	report.Request = source.Request
 	now := time.Now().UTC()
@@ -224,13 +243,14 @@ func (s *Service) launch(job Job) {
 	raw, _ := json.Marshal(job)
 	_ = json.Unmarshal(raw, &job)
 
-	ctx, cancel := context.WithTimeout(context.Background(), TotalTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), remainingExecution(job))
 	s.active[job.ID] = cancel
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
 		defer cancel()
 		defer func() { s.mu.Lock(); delete(s.active, job.ID); s.mu.Unlock() }()
+		job.executionTick = time.Now().UTC()
 		s.run(ctx, job)
 	}()
 }
@@ -290,16 +310,19 @@ func (s *Service) Resume(ctx context.Context, id string) (Job, error) {
 		job.UnionFacts = nil
 		job.Eligibility = nil
 		job.AsOf = now
+		job.ModelLoops = nil
+		job.ProposalCheckpoint = nil
+		job.CheckpointProgress = nil
+		job.RangeRepairUsed = false
+		job.ExecutionDurationMS = 0
+		job.ModelStageDurationMS = map[string]int64{}
 		job.ModelDurationMS = 0
 		job.ModelStartedAt = time.Time{}
 		job.Limitations = append(job.Limitations, "恢复时校验规则、交易日或研究时效变化，重新冻结资料并复评")
 	}
-	if job.ModelDurationMS > 0 {
-		job.Limitations = append(job.Limitations, fmt.Sprintf("手动恢复前模型累计耗时%d秒；保留成功检查点，缺失模型阶段各自启用最多8分钟预算，总运行最多24分钟", job.ModelDurationMS/1000))
+	if !stale && !checkpointCanResume(job) {
+		return job, errors.New("本次优化已达到时间或纠错上限，请重新开始；有效研究仍可复用")
 	}
-	job.ModelDurationMS = 0
-	job.ModelStageDurationMS = map[string]int64{}
-	job.ModelStartedAt = time.Time{}
 	job.ModelProgress = agent.PromptProgress{}
 	job.ModelPromptBytes = 0
 	// Older jobs marked a repair used before the size check, even when the
@@ -397,9 +420,12 @@ func (s *Service) run(ctx context.Context, job Job) {
 	if err != nil {
 		job.Status = "incomplete"
 		job.Outcome = "incomplete"
-		job.ResumeAvailable = true
+		job.ResumeAvailable = checkpointCanResume(job)
 		job.Error = err.Error()
 		job.Message = "优化未完成，已保存研究与检查点，可恢复"
+		if !job.ResumeAvailable {
+			job.Message = "本次优化已达到时间或纠错上限，已保留结果，可重新开始"
+		}
 		if errors.Is(err, context.Canceled) {
 			job.Status = "cancelled"
 			job.Message = "已停止优化，共享个股研究继续独立运行"
@@ -462,6 +488,10 @@ func (s *Service) executeFrozen(ctx context.Context, job *Job) error {
 			if frozenParts != nil {
 				var err error
 				p, err = repairProposalParts(ctx, *job, frozenParts, content)
+				var pending *proposalPartsError
+				if errors.As(err, &pending) {
+					frozenParts = pending
+				}
 				var rangeError *programRangeRepairError
 				if errors.As(err, &rangeError) {
 					copy := p
@@ -553,6 +583,7 @@ func (s *Service) executeFrozen(ctx context.Context, job *Job) error {
 		}
 
 		job.Proposal = &p
+		job.ProposalCheckpoint = &ProposalCheckpoint{Draft: p}
 		job.Plans = []Plan{}
 		for _, alt := range p.Alternatives {
 			solutions, err := SearchAllocations(ctx, *job, alt)
@@ -591,6 +622,7 @@ func (s *Service) executeFrozen(ctx context.Context, job *Job) error {
 			return err
 		}
 	}
+	selectReviewPlan(job)
 	for i := range job.Plans {
 		plan := &job.Plans[i]
 		if plan.Status != "pending_review" {
@@ -616,7 +648,7 @@ func (s *Service) executeFrozen(ctx context.Context, job *Job) error {
 			return err
 		}
 		job.Stage = "assessing"
-		job.Message = fmt.Sprintf("程序配仓搜索完成，独立复评第%d套组合", i+1)
+		job.Message = "程序已选定本轮配置，正在独立复评"
 		if job.RevisionCount > 0 {
 			job.Message = "改进配仓已生成，正在独立复评；优先寻找70分以上的合理组合"
 		}
@@ -631,63 +663,19 @@ func (s *Service) executeFrozen(ctx context.Context, job *Job) error {
 		plan.Proposed.Conclusion.RiskGroups = frozenGroups(job.Proposal.RiskGroups, plan.Proposed.Request.Holdings)
 		var a, b pi.AIReport
 		var review Assessment
+		checkpoint := &ReviewCheckpoint{}
+		plan.ReviewCheckpoint = checkpoint
 		err = s.model(ctx, job, prompt, func(content string) error {
-			if err := validateProfitInterpretation(content); err != nil {
-				return err
-			}
-			var result struct {
-				A          json.RawMessage `json:"a"`
-				B          json.RawMessage `json:"b"`
-				Assessment Assessment      `json:"assessment"`
-			}
-			if err := jsonContent(content, &result); err != nil {
-				return err
-			}
-			ra, rb := plan.Original, plan.Proposed
-			if plan.AssessmentOrder == "target_first" {
-				ra, rb = rb, ra
-			}
-			if err := checkReviewScopes(result.A, result.B, ra, rb); err != nil {
-				return err
-			}
 			var err error
-			a, err = pi.DecodeNamedOptimizationComparisonScore(result.A, ra, "a")
-			if err != nil {
-				return fmt.Errorf("A复评：%w", err)
-			}
-			b, err = pi.DecodeNamedOptimizationComparisonScore(result.B, rb, "b")
-			if err != nil {
-				return fmt.Errorf("B复评：%w", err)
-			}
-			if err := validateWholePortfolioIndustryClaim(*job, ra, a); err != nil {
-				return fmt.Errorf("A复评：%w", err)
-			}
-			if err := validateWholePortfolioIndustryClaim(*job, rb, b); err != nil {
-				return fmt.Errorf("B复评：%w", err)
-			}
-			if len(a.RiskGroups) > 0 || len(b.RiskGroups) > 0 {
-				return errors.New("复评risk_groups必须为空，分组已冻结由程序计算")
-			}
-
-			review = result.Assessment
-			review.Accepted, err = comparisonTargetsProposal(review.Preferred, plan.AssessmentOrder)
-			if err != nil {
-				return err
-			}
-			if review.Reason == "" || review.Issue == "" {
-				return errors.New("独立评价缺少原因或原问题")
-			}
-			if err := checkComparisonRefs(*job, plan, ra, rb, review.EvidenceRefs); err != nil {
-				return err
-			}
-			return validateReviewedComparisons(*job, *plan, review)
+			a, b, review, err = checkpoint.validate(*job, *plan, content)
+			return err
 		})
 		if err != nil {
 			var invalid *modelValidationError
 			if errors.As(err, &invalid) {
 				plan.Status = "invalid_review"
 				plan.Error = "独立复评未通过一致性检查，未采用评分：" + invalid.Error()
-				job.Limitations = append(job.Limitations, plan.Name+"复评无效，继续其他实质不同的配置；未重置模型预算或格式修复次数")
+				job.Limitations = append(job.Limitations, plan.Name+"复评无效，保留已通过的部分；本轮不尝试其他配置取分")
 				if saveErr := s.save(job); saveErr != nil {
 					return saveErr
 				}
@@ -744,6 +732,7 @@ func (s *Service) executeFrozen(ctx context.Context, job *Job) error {
 		archiveRejectedRound(job)
 		job.RevisionCount++
 		job.Proposal = nil
+		job.ProposalCheckpoint = nil
 		job.Plans = []Plan{}
 		job.Outcome, job.OutcomeReason = "", ""
 		job.Stage = "proposing"

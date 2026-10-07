@@ -43,18 +43,12 @@ func decodeInitialProposal(ctx context.Context, job Job, content string) (Propos
 }
 
 func solveProgramProposal(ctx context.Context, job Job, p Proposal) (Proposal, error) {
-	original, _, _ := weights(job.Source.Request.Holdings, false)
 	for i := range p.Alternatives {
 		for k := range p.Alternatives[i].Allocations {
-			a := &p.Alternatives[i].Allocations[k]
-			if a.Investment != nil {
-				// A zero-range wait remains an excluded observation candidate.
-				a.Suitable = in(a.Investment.Action, "allocate", "wait") && a.Maximum > 0
-				a.SuitabilityReason = strings.TrimSpace(a.Investment.PortfolioFit + "；" + a.Investment.Timing)
-			}
-			a.Preferred = max(a.Minimum, min(a.Maximum, original[a.Symbol]))
+			deriveAllocation(job, &p.Alternatives[i].Allocations[k])
 		}
 	}
+
 	// Invalid investment content is rejected. A missing comparison citation can
 	// be repaired after computing reference weights: this prevents the sole
 	// citation-only repair from encountering a second, artificial total error.
@@ -96,4 +90,13 @@ func solveProgramProposal(ctx context.Context, job Job, p Proposal) (Proposal, e
 		}
 	}
 	return p, validateProposal(job, p)
+}
+
+func deriveAllocation(job Job, a *Allocation) {
+	original, _, _ := weights(job.Source.Request.Holdings, false)
+	if a.Investment != nil {
+		a.Suitable = in(a.Investment.Action, "allocate", "wait") && a.Maximum > 0
+		a.SuitabilityReason = strings.TrimSpace(a.Investment.PortfolioFit + "；" + a.Investment.Timing)
+	}
+	a.Preferred = max(a.Minimum, min(a.Maximum, original[a.Symbol]))
 }

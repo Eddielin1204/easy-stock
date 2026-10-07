@@ -45,6 +45,8 @@ func TestOptimizationRoutesAndProvenanceValidation(t *testing.T) {
 	j.Status = "succeeded"
 	j.Outcome = "unchanged"
 	j.ModelPromptBytes = 23144
+	j.CheckpointProgress = &po.CheckpointProgress{SavedStocks: 3, TotalStocks: 4, PendingParts: 1}
+	j.ModelLoops = map[string]*po.ModelLoopState{"private": {Outputs: []string{"private-saved-output"}, NextPrompt: "private-repair-prompt"}}
 	j.ModelPromptVersion = po.ModelPromptVersion
 	j.Needs = []string{"补充不同主营盈利角色"}
 	j.ModelStageDurationMS = map[string]int64{"assessing": 230000}
@@ -65,19 +67,23 @@ func TestOptimizationRoutesAndProvenanceValidation(t *testing.T) {
 	}
 	progress := httptest.NewRecorder()
 	s.ServeHTTP(progress, httptest.NewRequest(http.MethodGet, "/api/v1/portfolio-optimizations/snapshot?view=progress", nil))
-	if progress.Code != 200 || strings.Contains(progress.Body.String(), "source_report") || strings.Contains(progress.Body.String(), "research_report") || !strings.Contains(progress.Body.String(), "completed_research") {
+	if progress.Code != 200 || strings.Contains(progress.Body.String(), "source_report") || strings.Contains(progress.Body.String(), "research_report") || strings.Contains(progress.Body.String(), "private-") || !strings.Contains(progress.Body.String(), "completed_research") {
 		t.Fatal("polling must return only compact progress", progress.Body.String())
 	}
 	var payload struct {
 		Data struct {
-			Input     int              `json:"model_prompt_bytes"`
-			Version   string           `json:"model_prompt_version"`
-			Durations map[string]int64 `json:"model_stage_duration_ms"`
-			Needs     []string         `json:"portfolio_needs"`
+			Checkpoint *po.CheckpointProgress `json:"checkpoint_progress"`
+			Input      int                    `json:"model_prompt_bytes"`
+			Version    string                 `json:"model_prompt_version"`
+			Durations  map[string]int64       `json:"model_stage_duration_ms"`
+			Needs      []string               `json:"portfolio_needs"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(progress.Body.Bytes(), &payload); err != nil || payload.Data.Input != j.ModelPromptBytes || payload.Data.Version != j.ModelPromptVersion || payload.Data.Durations["assessing"] != 230000 {
 		t.Fatal("compact progress lost model input or stage budget", err, payload)
+	}
+	if payload.Data.Checkpoint == nil || payload.Data.Checkpoint.SavedStocks != 3 || payload.Data.Checkpoint.PendingParts != 1 {
+		t.Fatal("checkpoint summary lost")
 	}
 	if len(payload.Data.Needs) != 1 || payload.Data.Needs[0] != j.Needs[0] {
 		t.Fatal("compact progress lost portfolio needs")

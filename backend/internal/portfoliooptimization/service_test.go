@@ -250,7 +250,7 @@ func TestAnonymousComparisonMapsPreferredPortfolioInBothOrders(t *testing.T) {
 			target := holds(45, 35)
 			req := j.Source.Request
 			req.Holdings = target
-			j.Plans = []Plan{{Name: "调权", Status: "pending_review", Target: target, Original: j.Source, Proposed: pi.OptimizationReport(req, j.Results), Checks: Check(j.Baseline, target), Improvements: measureImprovements(j, target), AssessmentOrder: order}}
+			j.Plans = []Plan{{Name: "调权", Status: "pending_review", Allocations: p.Alternatives[0].Allocations, Target: target, Original: j.Source, Proposed: pi.OptimizationReport(req, j.Results), Checks: Check(j.Baseline, target), Improvements: measureImprovements(j, target), AssessmentOrder: order}}
 			if err := s.execute(context.Background(), &j); err != nil {
 				t.Fatal(err)
 			}
