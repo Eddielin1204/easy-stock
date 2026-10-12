@@ -31,7 +31,7 @@ const { resolveUserDataPath } = require('./user-data.cjs');
 const { resolveHermesRuntimeRoot } = require('./hermes-runtime-root.cjs');
 const { createUpdateBackup, resolveBackupRoot } = require('./data-protection.cjs');
 const { UpdateManager } = require('./update-manager.cjs');
-const { resolveUpdateFeedURL } = require('./update-feed.cjs');
+const { resolveUpdateFeed } = require('./update-feed.cjs');
 const { createRotatingLogger } = require('./runtime-logger.cjs');
 
 app.setName('easy-stock');
@@ -305,7 +305,7 @@ async function stopRuntime() {
 function initializeUpdateManager() {
   const enabled = app.isPackaged && ['darwin', 'win32'].includes(process.platform);
   if (enabled) {
-    autoUpdater.setFeedURL({ provider: 'generic', url: resolveUpdateFeedURL() });
+    autoUpdater.setFeedURL(resolveUpdateFeed());
   }
   updateManager = new UpdateManager({
     updater: autoUpdater,

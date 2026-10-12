@@ -12,9 +12,6 @@ const version = releaseTag.slice(1);
 const githubNames = [
   `easy-stock-v${version}-macos-arm64.dmg`,
   `easy-stock-v${version}-macos-x64.dmg`,
-  `easy-stock-v${version}-windows-x64-setup.exe`,
-];
-const updaterNames = [
   `easy-stock-v${version}-macos-arm64.zip`,
   `easy-stock-v${version}-macos-arm64.zip.blockmap`,
   `easy-stock-v${version}-macos-x64.zip`,
@@ -25,16 +22,14 @@ const updaterNames = [
   'latest.yml',
 ];
 
-for (const name of [...new Set([...githubNames, ...updaterNames])]) {
+for (const name of githubNames) {
   const source = path.join(sourceRoot, name);
   if (!fs.statSync(source, { throwIfNoEntry: false })?.isFile()) throw new Error(`Required release asset is missing: ${name}`);
 }
 
-for (const [directory, names] of [['github', githubNames], ['updater', updaterNames]]) {
-  const targetRoot = path.join(outputRoot, directory);
-  fs.rmSync(targetRoot, { recursive: true, force: true });
-  fs.mkdirSync(targetRoot, { recursive: true });
-  for (const name of names) fs.copyFileSync(path.join(sourceRoot, name), path.join(targetRoot, name));
-}
+const targetRoot = path.join(outputRoot, 'github');
+fs.rmSync(targetRoot, { recursive: true, force: true });
+fs.mkdirSync(targetRoot, { recursive: true });
+for (const name of githubNames) fs.copyFileSync(path.join(sourceRoot, name), path.join(targetRoot, name));
 
-console.log(`Prepared ${githubNames.length} GitHub assets and ${updaterNames.length} updater assets for ${releaseTag}`);
+console.log(`Prepared ${githubNames.length} GitHub installation and update assets for ${releaseTag}`);

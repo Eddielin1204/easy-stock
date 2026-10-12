@@ -88,9 +88,13 @@ test('merges macOS updater metadata without installed npm dependencies', () => {
   assert.match(merged, /path: easy-stock-v0\.4\.0-macos-arm64\.zip/);
 });
 
-test('separates user downloads from internal updater assets', () => {
+test('stages every installation and update asset together for GitHub Releases', (t) => {
   const sourceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-release-assets-'));
   const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'easy-stock-publish-assets-'));
+  t.after(() => {
+    fs.rmSync(sourceRoot, { recursive: true, force: true });
+    fs.rmSync(outputRoot, { recursive: true, force: true });
+  });
   const version = '0.4.0';
   const names = [
     `easy-stock-v${version}-macos-arm64.dmg`,
@@ -109,19 +113,11 @@ test('separates user downloads from internal updater assets', () => {
   const scriptPath = path.resolve(__dirname, '..', 'scripts', 'prepare-publish-assets.mjs');
   execFileSync(process.execPath, [scriptPath, sourceRoot, outputRoot, `v${version}`]);
 
-  assert.deepEqual(fs.readdirSync(path.join(outputRoot, 'github')).sort(), [
-    `easy-stock-v${version}-macos-arm64.dmg`,
-    `easy-stock-v${version}-macos-x64.dmg`,
-    `easy-stock-v${version}-windows-x64-setup.exe`,
-  ]);
-  assert.deepEqual(fs.readdirSync(path.join(outputRoot, 'updater')).sort(), [
-    `easy-stock-v${version}-macos-arm64.zip`,
-    `easy-stock-v${version}-macos-arm64.zip.blockmap`,
-    `easy-stock-v${version}-macos-x64.zip`,
-    `easy-stock-v${version}-macos-x64.zip.blockmap`,
-    `easy-stock-v${version}-windows-x64-setup.exe`,
-    `easy-stock-v${version}-windows-x64-setup.exe.blockmap`,
-    'latest-mac.yml',
-    'latest.yml',
-  ].sort());
+  assert.deepEqual(fs.readdirSync(path.join(outputRoot, 'github')).sort(), names.sort());
+  assert.deepEqual(fs.readdirSync(outputRoot), ['github']);
+  for (const name of names) {
+    assert.equal(fs.readFileSync(path.join(outputRoot, 'github', name), 'utf8'), name);
+  }
+  fs.rmSync(path.join(sourceRoot, 'latest.yml'));
+  assert.throws(() => execFileSync(process.execPath, [scriptPath, sourceRoot, outputRoot, `v${version}`], { stdio: 'pipe' }), /Required release asset is missing: latest.yml/);
 });

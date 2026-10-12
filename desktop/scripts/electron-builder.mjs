@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import updateFeed from '../update-feed.cjs';
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const packageManifest = JSON.parse(fs.readFileSync(path.join(desktopRoot, 'package.json'), 'utf8'));
-const updateFeedURL = process.env.A_STOCK_UPDATE_FEED_URL || 'https://easy-stock-fs.oss-cn-beijing.aliyuncs.com/updates/desktop';
 const platform = process.argv[2];
 const mode = process.argv[3] || 'release';
 const arch = process.env.A_STOCK_DESKTOP_ARCH || process.arch;
@@ -68,7 +68,7 @@ const config = {
   ],
   extraResources: [{ from: path.join(desktopRoot, 'resources'), to: 'resources' }],
   asar: true,
-  publish: [{ provider: 'generic', url: updateFeedURL }],
+  publish: [updateFeed.resolveUpdateFeed()],
   mac: {
     category: 'public.app-category.finance',
     icon: path.join(desktopRoot, 'assets', 'easy-stock.icns'),
