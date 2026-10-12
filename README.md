@@ -288,6 +288,8 @@ Go 后端负责行情采集、量化计算、证据组织与任务编排，统�
 
 无需安装 Node.js、Go 或 Python。前往 [GitHub Releases](https://github.com/jundizhou/easy-stock/releases/latest) 下载适合当前系统的桌面安装包或压缩包。
 
+**从 v1.5.2 及更早版本升级**：v1.5.3 起桌面更新源切换到 GitHub Releases。旧版仍内置 OSS 地址，请从上述页面下载对应系统的 DMG / EXE，退出应用后覆盖安装一次；新版随后通过 GitHub 检查更新。macOS 更新仍需下载 DMG 手动安装，Windows 可在应用内下载并安装更新。
+
 首次使用请阅读 [使用帮助：配置大模型与雪球、淘股吧登录](./docs/user-guide.md)，其中包含 DeepSeek、Kimi 从购买 API 额度、创建 API Key 到连接测试的完整步骤。
 
 添加或启用本机 Skill，请阅读 [Skill 添加与启用说明](./docs/skill-installation.md)。
