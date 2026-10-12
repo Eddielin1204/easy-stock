@@ -65,7 +65,7 @@ func NormalizeSymbol(input string) (Symbol, error) {
 
 func inferAStockMarket(code string) string {
 	switch code[0] {
-	case '6':
+	case '5', '6':
 		return "SH"
 	case '0', '3':
 		return "SZ"

@@ -9,7 +9,7 @@ import (
 )
 
 func buildExpectationPrompt(summary review.DailySummary, request Request, results []HoldingResult, metrics Metrics, rules ProfileRules) (string, error) {
-	stocks := make([]compactHoldingAnalysis, 0, len(results))
+	stocks := make([]any, 0, len(results))
 	failed := make([]string, 0)
 	for _, result := range results {
 		if result.Status != "succeeded" || result.Analysis == nil {
@@ -17,6 +17,10 @@ func buildExpectationPrompt(summary review.DailySummary, request Request, result
 			continue
 		}
 		analysis := result.Analysis
+		if isETF(analysis) {
+			stocks = append(stocks, map[string]any{"symbol": analysis.Symbol, "name": analysis.Name, "weight_percent": result.Holding.Weight, "cost_price": result.Holding.CostPrice, "instrument_type": "etf", "etf": analysis.ETF.PortfolioFacts(), "ai_research": compactResearch(analysis), "ai_status": analysis.AI.Status, "current_quote": analysis.Quote})
+			continue
+		}
 		price := analysis.Quote.Price
 		if price <= 0 {
 			price = analysis.Trend.LatestClose
@@ -52,7 +56,7 @@ func buildExpectationPrompt(summary review.DailySummary, request Request, result
 	payload := map[string]any{
 		"prompt_version": ExpectationPromptVersion, "daily_review": reviewPayload, "trader_profile": rules,
 		"portfolio_metrics": metrics, "holdings": stocks, "failed_holdings": failed, "cash_percent": 100 - metrics.TotalPositionPercent,
-		"deterministic_summary": map[string]any{"health_score": metrics.HealthScore, "risk_level": riskLevelForMetrics(metrics, rules), "style_match": styleMatchLabel(metrics.StyleMatchScore)},
+		"deterministic_summary": map[string]any{"health_score": metrics.HealthScore, "health_score_available": metrics.HealthScoreAvailable, "stock_score_coverage_percent": metrics.StockScoreCoveragePercent, "risk_level": riskLevelForMetrics(metrics, rules), "style_match": styleMatchLabel(metrics.StyleMatchScore)},
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
@@ -91,7 +95,7 @@ ai_research是独立研究，优先于规则画像；ai_status不为ready表示�
 {"headline":"80至180字","portfolio_bias":"有利|中性|承压","core_conflict":"组合最重要的机会与风险冲突","review_exposure":[{"symbol":"","alignment":"共振|部分共振|背离|无直接关联","review_evidence":["最多3条"],"structure_evidence":["最多3条"]}],"scenarios":[{"key":"strong|base|weak","name":"","market_triggers":["最多5条"],"portfolio_impact":"","total_position_response":"条件化组合响应","holding_responses":[{"symbol":"","expected_behavior":"","action":"条件化动作","confirmation":"确认条件","invalidation":"失效条件"}]}],"holdings":[{"symbol":"","priority":"优先观察|保持跟踪|优先控制风险","opening_expectation":"","intraday_expectation":"","close_expectation":"","cost_context":"","before_trigger":"","positive_trigger":"","negative_trigger":"","invalidation":""}],"timeline":{"pre_open":["最多8条"],"opening_30m":["最多8条"],"intraday":["最多8条"],"close":["最多8条"]},"risk_alerts":["最多10条"],"data_limitations":["最多10条"],"confidence":0.0}
 
 [结构化输入JSON]
-` + string(encoded)
+` + ETFPolicyFor(results) + string(encoded)
 	return prompt, nil
 }
 

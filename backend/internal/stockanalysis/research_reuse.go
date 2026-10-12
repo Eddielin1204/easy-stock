@@ -40,6 +40,19 @@ func SuccessfulResearch(job ResearchJob) bool {
 	return err == nil && actual.Canonical == symbol.Canonical
 }
 
+// SuccessfulStockResearch retains the stock-only boundary for legacy callers.
+func SuccessfulStockResearch(job ResearchJob) bool {
+	return SuccessfulResearch(job) && job.Request.InstrumentType != "etf" && job.Analysis.InstrumentType != "etf" && !foundation.IsListedFundCandidate(job.Request.Symbol)
+}
+
+// SuccessfulInstrumentResearch validates fund identity before mixed-portfolio reuse.
+func SuccessfulInstrumentResearch(job ResearchJob) bool {
+	if SuccessfulStockResearch(job) {
+		return true
+	}
+	return SuccessfulResearch(job) && job.Request.InstrumentType == "etf" && job.Analysis.InstrumentType == "etf" && job.Analysis.ETF != nil && job.Analysis.ETF.Profile.Symbol == job.Analysis.Symbol && job.Analysis.ResearchReport.ETFJudgments != nil
+}
+
 type reuseExecutor interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }
@@ -54,7 +67,7 @@ func saveReuseIndex(ctx context.Context, db reuseExecutor, job ResearchJob) erro
 	if t := ResearchCompletedAt(job); !t.IsZero() {
 		completed = t.UnixNano()
 	}
-	_, err = db.ExecContext(ctx, `INSERT INTO stock_research_reuse_index(id,symbol,completed_ns,valid) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET symbol=excluded.symbol,completed_ns=excluded.completed_ns,valid=excluded.valid`, job.ID, canonical, completed, SuccessfulResearch(job))
+	_, err = db.ExecContext(ctx, `INSERT INTO stock_research_reuse_index(id,symbol,completed_ns,valid) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET symbol=excluded.symbol,completed_ns=excluded.completed_ns,valid=excluded.valid`, job.ID, canonical, completed, SuccessfulInstrumentResearch(job))
 	return err
 }
 
@@ -62,7 +75,7 @@ func (s *ResearchStore) migrateReuseIndex(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS stock_research_reuse_index(id TEXT PRIMARY KEY,symbol TEXT NOT NULL,completed_ns INTEGER NOT NULL,valid INTEGER NOT NULL); CREATE INDEX IF NOT EXISTS stock_research_reuse_lookup ON stock_research_reuse_index(symbol,valid,completed_ns DESC);`); err != nil {
 		return err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT j.content_json FROM stock_research_jobs j LEFT JOIN stock_research_reuse_index i ON i.id=j.id WHERE i.id IS NULL`)
+	rows, err := s.db.QueryContext(ctx, `SELECT j.content_json FROM stock_research_jobs j LEFT JOIN stock_research_reuse_index i ON i.id=j.id WHERE i.id IS NULL OR (i.valid=0 AND json_extract(j.content_json,'$.request.instrument_type')='etf' AND json_extract(j.content_json,'$.status')='succeeded')`)
 	if err != nil {
 		return err
 	}
@@ -121,7 +134,7 @@ func (s *ResearchStore) findReusable(ctx context.Context, symbol string, asOf, u
 		if err := json.Unmarshal([]byte(data), &job); err != nil {
 			return ResearchJob{}, err
 		}
-		if SuccessfulResearch(job) {
+		if SuccessfulInstrumentResearch(job) {
 			return RevalidateReusableResearch(job), nil
 		}
 	}
@@ -134,6 +147,9 @@ func (s *ResearchStore) findReusable(ctx context.Context, symbol string, asOf, u
 // ResolveForPortfolio atomically reuses a report, joins a live task, or creates one.
 // A portfolio owns its wait, never the lifetime of a shared stock research task.
 func (s *ResearchService) ResolveForPortfolio(ctx context.Context, request ResearchRequest, asOf time.Time, force bool, resumeID string) (ResearchJob, string, error) {
+	if foundation.IsListedFundCandidate(request.Symbol) && request.InstrumentType != "etf" {
+		return ResearchJob{}, "", fmt.Errorf("基金需先确认ETF身份")
+	}
 	request, err := NormalizeResearchRequest(request)
 	if err != nil {
 		return ResearchJob{}, "", err
@@ -170,7 +186,7 @@ func (s *ResearchService) ResolveForPortfolio(ctx context.Context, request Resea
 		if job.Status == "queued" || job.Status == "running" {
 			return job, "shared_running", nil
 		}
-		if !force && SuccessfulResearch(job) && asOf.Sub(ResearchCompletedAt(job)) < ResearchReuseWindow && !ResearchCompletedAt(job).After(asOf) {
+		if !force && SuccessfulInstrumentResearch(job) && asOf.Sub(ResearchCompletedAt(job)) < ResearchReuseWindow && !ResearchCompletedAt(job).After(asOf) {
 			return RevalidateReusableResearch(job), "reused", nil
 		}
 	}

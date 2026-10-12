@@ -435,15 +435,21 @@ func (s *Server) optimizationScreeningBars(ctx context.Context, symbol string) (
 // Fetch one bounded valuation batch alongside prices. A failed optional source
 // leaves valuation unknown; it must not block the original growth pathway.
 func (s *Server) refreshOptimizationQuotes(ctx context.Context, symbols []string) ([]foundation.Quote, error) {
+	stockSymbols := []string{}
+	for _, symbol := range symbols {
+		if !foundation.IsListedFundCandidate(symbol) {
+			stockSymbols = append(stockSymbols, symbol)
+		}
+	}
 	var valuations []foundation.StockValuation
 	var wg sync.WaitGroup
-	if s.stockValuation != nil {
+	if s.stockValuation != nil && len(stockSymbols) > 0 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			loadCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 			defer cancel()
-			values, err := s.stockValuation.StockValuations(loadCtx, symbols)
+			values, err := s.stockValuation.StockValuations(loadCtx, stockSymbols)
 			if err == nil {
 				valuations = values
 			}

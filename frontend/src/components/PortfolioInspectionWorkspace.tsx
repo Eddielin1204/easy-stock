@@ -27,7 +27,7 @@ import {
 	PortfolioInspectionReport,
  PortfolioResearchRequest,
 	PortfolioTraderProfile,
-	StockAIAnalysis,
+	InstrumentAnalysis,
 	StockDirectoryData,
 	StockDirectoryEntry,
 	requestJSON,
@@ -47,10 +47,10 @@ type Props = {
 	refreshKey: number;
 	onOpenSettings: () => void;
  onOpenNotificationSettings: () => void;
-	onOpenStockAnalysis: (analysis: StockAIAnalysis) => void;
+	onOpenStockAnalysis: (analysis: InstrumentAnalysis) => void;
 };
 
-const directoryStorageKey = 'easy-stock.stock-directory.v1';
+const directoryStorageKey = 'easy-stock.portfolio-instrument-directory.v1';
 
 export function PortfolioInspectionWorkspace({ config, refreshKey, onOpenSettings, onOpenNotificationSettings, onOpenStockAnalysis }: Props) {
 	const [plans, setPlans] = useState(readPortfolioPlans);
@@ -105,11 +105,11 @@ export function PortfolioInspectionWorkspace({ config, refreshKey, onOpenSetting
 	useEffect(() => {
 		if (!config) return;
 		const controller = new AbortController();
-		requestJSON<{ data: StockDirectoryData }>(config, '/api/v1/stocks/directory', { signal: controller.signal }).then(({ data }) => {
+		requestJSON<{ data: StockDirectoryData }>(config, '/api/v1/instruments', { signal: controller.signal }).then(({ data }) => {
 			if (controller.signal.aborted) return;
 			setDirectory(data.stocks || []);
 			cacheDirectory(data.stocks || []);
-		}).catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : '股票目录加载失败'); });
+		}).catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : '股票 / ETF 目录加载失败'); });
 		return () => controller.abort();
 	}, [config, refreshKey]);
 
@@ -302,11 +302,11 @@ function InspectionProgress({ job }: { job: PortfolioInspectionJob }) {
 	</section>;
 }
 
-function PortfolioReportView({ report, status, onNew, onOpenStockAnalysis, afterSummary }: { report: PortfolioInspectionReport; afterSummary?: ReactNode; status: string; onNew: () => void; onOpenStockAnalysis: (analysis: StockAIAnalysis) => void }) {
+function PortfolioReportView({ report, status, onNew, onOpenStockAnalysis, afterSummary }: { report: PortfolioInspectionReport; afterSummary?: ReactNode; status: string; onNew: () => void; onOpenStockAnalysis: (analysis: InstrumentAnalysis) => void }) {
 	const { conclusion, metrics } = report;
 	const isV2 = report.algorithm_version === 'portfolio-health-v2';
 	const names = new Map(report.holdings.map((item) => [item.holding.symbol, item.analysis?.name || item.holding.name || item.holding.symbol]));
-	const analyses = new Map<string, StockAIAnalysis>();
+	const analyses = new Map<string, InstrumentAnalysis>();
 	report.holdings.forEach((item) => {
 		if (!item.analysis || item.status !== 'succeeded') return;
 		analyses.set(item.holding.symbol, item.analysis);

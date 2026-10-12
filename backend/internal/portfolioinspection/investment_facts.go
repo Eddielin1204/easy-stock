@@ -14,7 +14,7 @@ var investmentFinancialFields = []string{"revenue", "revenue_yoy", "net_profit",
 // or default values in FundamentalAnalysis. Conflicting fields remain unavailable.
 func InvestmentFinancialFacts(r HoldingResult) map[string]Fact {
 	out := map[string]Fact{}
-	if !validHoldingResearch(r) {
+	if !validHoldingResearch(r) || isETF(r.Analysis) {
 		return out
 	}
 	rr := r.Analysis.ResearchReport

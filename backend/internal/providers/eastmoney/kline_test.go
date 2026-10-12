@@ -90,3 +90,17 @@ func TestParseKLineSupportsIntradayTime(t *testing.T) {
 		t.Fatalf("Time = %v, want 14:35", got.Time)
 	}
 }
+
+func TestETFRawKLineUsesRawPricesAndFundUnits(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("fqt") != "0" || r.URL.Query().Get("secid") != "1.510300" {
+			t.Errorf("wrong raw request %s", r.URL.RawQuery)
+		}
+		w.Write([]byte(`{"rc":0,"data":{"klines":["2026-10-09,1.231,1.237,1.239,1.230,123,15200,0,0,0,0"]}}`))
+	}))
+	defer server.Close()
+	bars, err := NewClient(WithBaseURL(server.URL)).RawKLine(context.Background(), "510300", "day", 1)
+	if err != nil || len(bars) != 1 || bars[0].Close != 1.237 || bars[0].Volume != 12300 || bars[0].Amount != 15200 {
+		t.Fatalf("bad raw ETF bar %+v %v", bars, err)
+	}
+}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowRight, ArrowDown, BrainCircuit, Check, CircleAlert, ExternalLink, History, LoaderCircle, Pause, Minus, ShieldCheck } from 'lucide-react';
-import type { BackendConfig, PortfolioHolding, PortfolioInspectionReport, PortfolioOptimizationJob, PortfolioOptimizationPlan, PortfolioResearchRequest, StockAIAnalysis } from '../lib/backend';
+import type { BackendConfig, PortfolioHolding, PortfolioInspectionReport, PortfolioOptimizationJob, PortfolioOptimizationPlan, PortfolioResearchRequest, InstrumentAnalysis } from '../lib/backend';
 import { requestJSON } from '../lib/backend';
 import { ResearchPanel } from './StockResearchReport';
 import { PortfolioEvidence } from './PortfolioAIReport';
@@ -9,7 +9,7 @@ import { optimizationCandidateSource, optimizationLiquiditySource, portfolioScor
 
 type ApplyToPlanProps = { onApplyToPlan?: (holdings: PortfolioHolding[]) => void; originalPlanName?: string; applyingToPlan?: boolean };
 
-type Props = ApplyToPlanProps & { config: BackendConfig | null; sourceId: string; canStart: boolean; startSignal: number; onApply: (request: PortfolioResearchRequest) => void; onOpenStockAnalysis: (analysis: StockAIAnalysis) => void; applyBusy: boolean; onRefreshSource: () => void };
+type Props = ApplyToPlanProps & { config: BackendConfig | null; sourceId: string; canStart: boolean; startSignal: number; onApply: (request: PortfolioResearchRequest) => void; onOpenStockAnalysis: (analysis: InstrumentAnalysis) => void; applyBusy: boolean; onRefreshSource: () => void };
 const outcomeLabel: Record<string,string> = { conditional: '需等待条件', accepted: '有可采纳方案', unchanged: '本次未调整', no_feasible_plan: '未生成可行调整方案', below_target_score: '评分与改善要求未通过', review_invalid: '复评无效，未生成优化结果', incomplete: '研究 / 评估未完成' };
 const optimizationSteps = [{ key:'preparing', label:'准备资料' }, { key:'screening', label:'筛选候选' }, { key:'researching', label:'个股研究' }, { key:'proposing', label:'搜索配仓' }, { key:'assessing', label:'独立复评' }, { key:'completed', label:'完成' }];
 const stageLabel = Object.fromEntries(optimizationSteps.map((step) => [step.key,step.label]));

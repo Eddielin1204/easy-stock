@@ -289,3 +289,11 @@ func TestFundingComparedUsesReversePathsAndLeavesUnmatchedFundingVisible(t *test
 		t.Fatal("unmatched money hidden", flows)
 	}
 }
+
+func TestETFEligibilityDoesNotApplyStockTradingRules(t *testing.T) {
+	now := time.Now()
+	e := TradingEligibility(foundation.StockCatalogEntry{BoardStock: foundation.BoardStock{Name: "样本ETF"}}, foundation.Quote{Symbol: "510300.SH", Price: 1.237, Volume: 1000000, Amount: 1237000, TradeTime: now}, now)
+	if !e.Locked || e.CanIncrease || !strings.Contains(e.Reason, "ETF") || len(e.MissingFields) == 0 {
+		t.Fatal(e)
+	}
+}

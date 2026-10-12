@@ -47,7 +47,11 @@ func VerifyResearch(snapshot ResearchSnapshot, report ResearchReport, lines []fo
 		}
 		if index, ok := byDate[old.Date]; ok {
 			overlap = true
-			if math.Abs(usable[index].Close-old.Close) > math.Max(.015, old.Close*.0002) {
+			tolerance := math.Max(.015, old.Close*.0002)
+			if snapshot.InstrumentType == "etf" {
+				tolerance = .0005
+			}
+			if math.Abs(usable[index].Close-old.Close) > tolerance {
 				coverageProblem = "历史重叠收盘价发生变化，可能存在前复权调整或数据修订；原价格阈值不可直接核验"
 			}
 			break
@@ -84,7 +88,7 @@ func VerifyResearch(snapshot ResearchSnapshot, report ResearchReport, lines []fo
 			index, ok := byDate[date]
 			if !ok {
 				check.Status = "unavailable"
-				check.Detail = "缺少窗口内" + date + "个股日线，可能停牌或采集缺失，不能跳过该日"
+				check.Detail = "缺少窗口内" + date + "标的日线，可能停牌或采集缺失，不能跳过该日"
 				break
 			}
 			bar := usable[index]

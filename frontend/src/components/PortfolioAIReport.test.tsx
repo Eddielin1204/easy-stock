@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { PortfolioAIReportView, portfolioDate } from './PortfolioAIReport';
 import type { PortfolioInspectionReport } from '../lib/backend';
+import { etfFixture } from '../test-utils/etf-fixture';
 import { portfolioScoringVersion } from '../lib/portfolio-optimization';
 
 const report = {
@@ -42,6 +43,11 @@ describe('portfolio AI report', () => {
    expect(text).toContain('<strong>待完成</strong>');
    expect(text).not.toContain('<small>/ 100</small>');
   }
+ });
+ it('opens ETF research in a mixed portfolio without stock field assumptions',()=>{
+  const a=etfFixture();
+  const value={...report,algorithm_version:portfolioScoringVersion,holdings:[...report.holdings,{holding:{symbol:a.symbol,name:a.name,weight_percent:20},status:'succeeded',analysis:a}]};
+  const text=markup(value);expect(text).toContain('股票与 ETF 组合');expect(text).toContain('查看原研究报告');expect(text).not.toContain('NaN');
  });
  it('does not present unset timestamps as real report dates', () => { expect(portfolioDate('0001-01-01T00:00:00Z')).toBe('时间未知'); });
  it('shows retained evidence for normalized explanation objects and dimension limitations', () => {

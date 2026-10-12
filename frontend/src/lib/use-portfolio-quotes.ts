@@ -29,7 +29,7 @@ export function usePortfolioQuotes(config: BackendConfig | null | undefined, sym
 				const next = await loadPortfolioQuotes(config, symbols, controller.signal);
 				if (!active) return;
 				setQuotes(next);
-				setError(symbols.every((symbol) => next[symbol]) ? '' : '部分股票暂无有效行情，相关盈亏暂不计算');
+				setError(symbols.every((symbol) => next[symbol]) ? '' : '部分持仓暂无有效行情，相关盈亏暂不计算');
 			} catch {
 				if (active) setError('行情刷新失败，已有价格为上次快照');
 			} finally {

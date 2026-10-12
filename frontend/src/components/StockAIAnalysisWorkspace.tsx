@@ -47,6 +47,7 @@ import {
 	LLMProfile,
 	StockAIActionPriceZone,
 	StockAIAnalysis,
+	InstrumentAnalysis,
 	StockAIDataQuality,
 	StockAINewsAnalysis,
 	StockAINextDayScenario,
@@ -72,6 +73,7 @@ import { useStockResearch } from '../lib/use-stock-research';
 import { isResearchRunning, researchPlanText, type ResearchAnalysisLevel, type ResearchRequest } from '../lib/stock-research';
 import { StockResearchHistory, StockResearchProgress, StockResearchReportView } from './StockResearchReport';
 import { StockResearchSetupDialog, type ResearchSetupOptions } from './StockResearchSetupDialog';
+import { ETFAnalysisReport, etfSnapshotText } from './ETFAnalysisReport';
 import { StockResearchTradingLogic } from './StockResearchTradingLogic';
 
 export type StockAIWorkspaceMode = 'analysis' | 'expectation' | 'risk';
@@ -81,9 +83,9 @@ type Props = {
 	refreshKey: number;
 	mode: StockAIWorkspaceMode;
 	onModeChange: (mode: StockAIWorkspaceMode) => void;
-	initialAnalysis?: StockAIAnalysis | null;
+	initialAnalysis?: InstrumentAnalysis | null;
 	onInitialAnalysisConsumed?: () => void;
-	onAskAI: (analysis: StockAIAnalysis) => void;
+	onAskAI: (analysis: InstrumentAnalysis) => void;
 	onOpenSettings: () => void;
 };
 
@@ -102,10 +104,10 @@ type AnalysisHistoryItem = {
 const symbolStorageKey = 'easy-stock.stock-ai-symbol.v1';
 const historyStorageKey = 'easy-stock.stock-ai-history.v2';
 const capitalStorageKey = 'easy-stock.stock-ai-capital.v1';
-const directoryStorageKey = 'easy-stock.stock-directory.v1';
+const directoryStorageKey = 'easy-stock.instrument-directory.v1';
 const hotStockSidebarStorageKey = 'easy-stock.stock-ai-popular-sidebar-collapsed.v1';
 const directoryStorageTTL = 24 * 60 * 60 * 1000;
-const examples = ['600519', '300750', '002594', '601138', '688981'];
+const examples = ['600519', '510300', '159915', '518880', '511990'];
 
 function readStoredValue(key: string) { try { return window.localStorage.getItem(key) || ''; } catch { return ''; } }
 function writeStoredValue(key: string, value: string) { try { window.localStorage.setItem(key, value); } catch { /* Backend research history remains available. */ } }
@@ -121,7 +123,7 @@ export function StockAIAnalysisWorkspace({ config, refreshKey, mode, onModeChang
 	const [levelDialogOpen, setLevelDialogOpen] = useState(false);
 	const [pendingAnalysisSymbol, setPendingAnalysisSymbol] = useState('');
 	const [query, setQuery] = useState(() => readStoredValue(symbolStorageKey));
-	const [analysis, setAnalysis] = useState<StockAIAnalysis | null>(null);
+	const [analysis, setAnalysis] = useState<InstrumentAnalysis | null>(null);
 	const [history, setHistory] = useState<AnalysisHistoryItem[]>(loadAnalysisHistory);
 	const [state, setState] = useState<LoadState>('idle');
 	const [error, setError] = useState('');
@@ -130,6 +132,7 @@ export function StockAIAnalysisWorkspace({ config, refreshKey, mode, onModeChang
 	const [exporting, setExporting] = useState(false);
 	const [exportNotice, setExportNotice] = useState('');
 	const [directory, setDirectory] = useState<StockDirectoryEntry[]>(loadCachedStockDirectory);
+	const [directoryWarnings, setDirectoryWarnings] = useState<string[]>([]);
 	const [directoryState, setDirectoryState] = useState<DirectoryState>(() => directory.length > 0 ? 'cached' : 'idle');
 	const [hotRanks, setHotRanks] = useState<HotStockRankData | null>(null);
 	const [hotRankState, setHotRankState] = useState<HotRankState>('idle');
@@ -141,7 +144,7 @@ export function StockAIAnalysisWorkspace({ config, refreshKey, mode, onModeChang
 	const exportRef = useRef<HTMLDivElement>(null);
 	const analysisRequestSequence = useRef(0);
 	const analysisAbortController = useRef<AbortController | null>(null);
-	const analysisRef = useRef<StockAIAnalysis | null>(null);
+	const analysisRef = useRef<InstrumentAnalysis | null>(null);
 	const lastRefreshKey = useRef(0);
 	analysisRef.current = analysis;
 
@@ -166,8 +169,8 @@ export function StockAIAnalysisWorkspace({ config, refreshKey, mode, onModeChang
 		} finally { setAIChoiceBusy(false); }
 	};
 
-	const saveAnalysis = useCallback((item: StockAIAnalysis) => {
-		if (item.analysis_id) return;
+	const saveAnalysis = useCallback((item: InstrumentAnalysis) => {
+		if (item.analysis_id || item.instrument_type === 'etf') return;
 		setHistory((current) => {
 			const next: AnalysisHistoryItem[] = [{
 				symbol: item.symbol,
@@ -222,7 +225,7 @@ export function StockAIAnalysisWorkspace({ config, refreshKey, mode, onModeChang
 		analysisRequestSequence.current = sequence;
 		const symbol = resolveStockDirectorySymbol(rawSymbol, directory);
 		if (!symbol) {
-			setError(directory.length > 0 ? '未找到唯一匹配的股票，请从搜索结果中选择' : '请输入6位股票代码，例如 600519');
+			setError(directory.length > 0 ? '未找到唯一匹配的股票或 ETF，请从搜索结果中选择' : '请输入6位股票或 ETF 代码，例如 600519 / 510300');
 			setState('error');
 			return;
 		}
@@ -242,7 +245,7 @@ export function StockAIAnalysisWorkspace({ config, refreshKey, mode, onModeChang
 			await research.start({ symbol, purpose: setup.purpose, horizon: setup.horizon, analysis_level: selectedLevel, ...(setup.purpose === 'holding' && setup.cost ? { cost_price: Number(setup.cost) } : {}) });
 		} catch (loadError) {
 			if (isAbortError(loadError) || analysisRequestSequence.current !== sequence) return;
-			setError(loadError instanceof Error ? loadError.message : '个股AI分析失败');
+			setError(loadError instanceof Error ? loadError.message : '标的 AI 分析失败');
 			setState('error');
 		}
 	}, [config, directory, research.start, purpose, horizon, cost, researchLevel]);
@@ -250,7 +253,7 @@ export function StockAIAnalysisWorkspace({ config, refreshKey, mode, onModeChang
 	const requestAnalysis = useCallback((rawSymbol: string) => {
 		const symbol = resolveStockDirectorySymbol(rawSymbol, directory);
 		if (!symbol) {
-			setError(directory.length > 0 ? '未找到唯一匹配的股票，请从搜索结果中选择' : '请输入6位股票代码，例如 600519');
+			setError(directory.length > 0 ? '未找到唯一匹配的股票或 ETF，请从搜索结果中选择' : '请输入6位股票或 ETF 代码，例如 600519 / 510300');
 			setState('error');
 			return;
 		}
@@ -271,13 +274,14 @@ export function StockAIAnalysisWorkspace({ config, refreshKey, mode, onModeChang
 		if (!config) return;
 		let cancelled = false;
 		setDirectoryState((current) => current === 'cached' ? 'cached' : 'loading');
-		void requestJSON<{ data: StockDirectoryData }>(config, '/api/v1/stocks/directory')
+		void requestJSON<{ data: StockDirectoryData }>(config, '/api/v1/instruments')
 			.then((payload) => {
 				if (cancelled) return;
 				const stocks = payload.data.stocks || [];
 				setDirectory(stocks);
-				setDirectoryState('ready');
-				saveCachedStockDirectory(stocks);
+				setDirectoryWarnings(payload.data.warnings || []);
+				setDirectoryState(payload.data.stale ? 'cached' : 'ready');
+				if (!payload.data.stale) saveCachedStockDirectory(stocks);
 			})
 			.catch(() => {
 				if (cancelled) return;
@@ -375,6 +379,10 @@ export function StockAIAnalysisWorkspace({ config, refreshKey, mode, onModeChang
 				onclone: (_document, element) => {
 					_document.documentElement.dataset.theme = 'light';
 					element.classList.add('is-exporting');
+					// html2canvas can paint descendants of native closed details.
+					element.querySelectorAll<HTMLDetailsElement>('.etf-analysis details:not([open])').forEach((details) => {
+						Array.from(details.children).filter((child) => child.tagName !== 'SUMMARY').forEach((child) => child.remove());
+					});
 				},
 			});
 			const blob = await canvasToPNGBlob(canvas);
@@ -398,13 +406,13 @@ export function StockAIAnalysisWorkspace({ config, refreshKey, mode, onModeChang
 
 	return (
 		<section className="stock-ai-workspace">
-			<AnalysisSearch query={query} mode={mode} directory={directory} directoryState={directoryState} onQuery={setQuery} onSubmit={submit} loading={state === 'loading' || state === 'refining'} llmProfiles={llmProfiles} activeLLMProfileID={activeLLMProfileID} config={config} refreshKey={String(refreshKey)} choiceBusy={aiChoiceBusy} onModelChange={(id) => void switchResearchModel(id)} />
+			<AnalysisSearch query={query} mode={mode} directory={directory} directoryState={directoryState} directoryWarnings={directoryWarnings} onQuery={setQuery} onSubmit={submit} loading={state === 'loading' || state === 'refining'} llmProfiles={llmProfiles} activeLLMProfileID={activeLLMProfileID} config={config} refreshKey={String(refreshKey)} choiceBusy={aiChoiceBusy} onModelChange={(id) => void switchResearchModel(id)} />
 			<nav className="mode-nav stock-ai-mode-nav" aria-label="工作台模式">
-				<button type="button" className={mode === 'analysis' ? 'active' : ''} aria-pressed={mode === 'analysis'} onClick={() => onModeChange('analysis')}><BrainCircuit size={16} aria-hidden="true" />个股分析</button>
-				<button type="button" className={mode === 'expectation' ? 'active' : ''} aria-pressed={mode === 'expectation'} onClick={() => onModeChange('expectation')}><Target size={16} aria-hidden="true" />隔日预期</button>
+				<button type="button" className={mode === 'analysis' ? 'active' : ''} aria-pressed={mode === 'analysis'} onClick={() => onModeChange('analysis')}><BrainCircuit size={16} aria-hidden="true" />股票 / ETF 分析</button>
+				<button type="button" className={mode === 'expectation' ? 'active' : ''} aria-pressed={mode === 'expectation'} onClick={() => onModeChange('expectation')}><Target size={16} aria-hidden="true" />{analysis?.instrument_type === 'etf' ? '情景与核验' : '隔日预期'}</button>
 				<button type="button" className={mode === 'risk' ? 'active' : ''} aria-pressed={mode === 'risk'} onClick={() => onModeChange('risk')}><ShieldCheck size={16} aria-hidden="true" />风控执行</button>
 			</nav>
-			{levelDialogOpen && <StockResearchSetupDialog symbol={pendingAnalysisSymbol} initialOptions={{ purpose, horizon, cost, level: 'deep' }} onCancel={() => setLevelDialogOpen(false)} onConfirm={confirmResearchLevel} />}
+			{levelDialogOpen && <StockResearchSetupDialog symbol={pendingAnalysisSymbol} isETF={isETFCandidate(pendingAnalysisSymbol)} initialOptions={{ purpose, horizon, cost, level: isETFCandidate(pendingAnalysisSymbol) ? 'standard' : 'deep' }} onCancel={() => setLevelDialogOpen(false)} onConfirm={confirmResearchLevel} />}
 			<div className={`stock-ai-shell ${hotStockSidebarCollapsed ? 'is-hot-collapsed' : ''}`.trim()}>
 					<HotStockSidebar data={hotRanks} state={hotRankState} error={hotRankError} activeSymbol={analysis?.symbol} collapsed={hotStockSidebarCollapsed} onToggle={toggleHotStockSidebar} onRefresh={() => void loadHotRanks(true)} onSelect={(symbol) => requestAnalysis(symbol)} />
 				<div className="stock-ai-main">
@@ -447,7 +455,7 @@ export function StockAIAnalysisWorkspace({ config, refreshKey, mode, onModeChang
 						<div className="stock-ai-result">
 							<div className="stock-ai-export-sheet" ref={exportRef}>
 								<AnalysisExportHeader analysis={analysis} mode={mode} />
-								<AnalysisVerdict analysis={analysis} copied={copied} exporting={exporting} onRefresh={() => requestAnalysis(analysis.symbol)} onExport={() => void exportLongImage()} onCopy={() => void copyPlan()} onAskAI={() => onAskAI(analysis)} onOpenSettings={onOpenSettings} />
+								{analysis.instrument_type === 'etf' ? <ETFAnalysisReport analysis={analysis} view={mode === 'analysis' ? 'research' : mode} copied={copied} exporting={exporting} onRefresh={() => requestAnalysis(analysis.symbol)} onExport={() => void exportLongImage()} onCopy={() => void copyPlan()} onAskAI={() => onAskAI(analysis)} verification={research.job?.id === analysis.analysis_id ? research.job?.verification : undefined} verifying={research.verifying} onVerify={research.job?.id === analysis.analysis_id ? () => void research.verify() : undefined} /> : <><AnalysisVerdict analysis={analysis} copied={copied} exporting={exporting} onRefresh={() => requestAnalysis(analysis.symbol)} onExport={() => void exportLongImage()} onCopy={() => void copyPlan()} onAskAI={() => onAskAI(analysis)} onOpenSettings={onOpenSettings} />
 									{analysis.research_report ? <>
 										{mode === 'analysis' && <details className="stock-research-quantitative" open><summary>量化基线与行情数据 · {analysis.scorecard.overall} 分</summary><FullAnalysisView analysis={analysis} /></details>}
 										{mode === 'analysis' && <StockResearchTradingLogic key={analysis.analysis_id || analysis.research_report.generated_at} report={analysis.research_report} />}
@@ -458,7 +466,7 @@ export function StockAIAnalysisWorkspace({ config, refreshKey, mode, onModeChang
 										{mode === 'expectation' && <ExpectationView analysis={analysis} />}
 										{mode === 'risk' && <RiskExecutionView analysis={analysis} />}
 									</>}
-								<AnalysisExportFooter analysis={analysis} />
+								</>}<AnalysisExportFooter analysis={analysis} />
 							</div>
 							{exportNotice && <div className={`stock-ai-export-notice ${exportNotice.includes('失败') ? 'error' : ''}`} role="status">{exportNotice}</div>}
 						</div>
@@ -543,14 +551,14 @@ function formatHotRankTime(value: string) {
 	return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 }
 
-function AnalysisExportHeader({ analysis, mode }: { analysis: StockAIAnalysis; mode: StockAIWorkspaceMode }) {
+function AnalysisExportHeader({ analysis, mode }: { analysis: InstrumentAnalysis; mode: StockAIWorkspaceMode }) {
 	return <header className="stock-ai-export-header">
 		<div className="stock-ai-export-brand"><span><BrainCircuit size={24} /></span><div><strong>easy-stock</strong><small>AI STOCK DECISION SYSTEM</small><em>开源 · 免费使用</em></div></div>
 		<div><span>{workspaceModeLabel(mode)}</span><strong>{analysis.name} · {analysis.symbol}</strong><small>分析生成于 {formatExportDate(analysis.generated_at)}</small></div>
 	</header>;
 }
 
-function AnalysisExportFooter({ analysis }: { analysis: StockAIAnalysis }) {
+function AnalysisExportFooter({ analysis }: { analysis: InstrumentAnalysis }) {
 	return <footer className="stock-ai-export-footer">
 		<div><strong>easy-stock</strong><span>让数据、逻辑与 AI 一起服务于交易决策</span></div>
 		<div className="stock-ai-export-promo"><span><Github size={13} />个人非商业免费 · 欢迎 Star</span><b>微信公众号：easy只吃番茄</b><strong>github.com/jundizhou/easy-stock</strong></div>
@@ -558,11 +566,12 @@ function AnalysisExportFooter({ analysis }: { analysis: StockAIAnalysis }) {
 	</footer>;
 }
 
-function AnalysisSearch({ query, mode, directory, directoryState, onQuery, onSubmit, loading, llmProfiles, activeLLMProfileID, config, refreshKey, choiceBusy, onModelChange }: {
+function AnalysisSearch({ query, mode, directory, directoryState, directoryWarnings, onQuery, onSubmit, loading, llmProfiles, activeLLMProfileID, config, refreshKey, choiceBusy, onModelChange }: {
 	query: string;
 	mode: StockAIWorkspaceMode;
 	directory: StockDirectoryEntry[];
 	directoryState: DirectoryState;
+	directoryWarnings: string[];
 	onQuery: (value: string) => void;
 	onSubmit: (event: FormEvent) => void;
 	loading: boolean;
@@ -578,9 +587,9 @@ function AnalysisSearch({ query, mode, directory, directoryState, onQuery, onSub
 	const suggestions = useMemo(() => searchStockDirectory(directory, query), [directory, query]);
 	const resolvedSymbol = useMemo(() => resolveStockDirectorySymbol(query, directory), [directory, query]);
 	const descriptions: Record<StockAIWorkspaceMode, string> = {
-		analysis: '自动路由新股价格发现、趋势容量、成长趋势、情绪短线与风险结构，形成与样本成熟度匹配的结论。',
-		expectation: '将确定性预测改为可验证的隔日情景，覆盖高开承接、平开确认、低开修复与破位失效。',
-		risk: '依据结构失效位、账户风险预算和仓位上限，反推可执行股数、止盈与纪律清单。',
+		analysis: '按标的类型组织证据：股票研究业务与量价，ETF 分别判断底层资产、基金产品和介入条件。',
+		expectation: '查看支持、反对与失效情景，按所选周期核对后续行情和待披露事项。',
+		risk: '核实新仓与已有持仓的执行边界；资料不足时保留观察，不生成价格计划。',
 	};
 	const chooseSuggestion = (stock: StockDirectoryEntry) => {
 		onQuery(stock.symbol);
@@ -603,10 +612,10 @@ function AnalysisSearch({ query, mode, directory, directoryState, onQuery, onSub
 		}
 	};
 	const directoryHint = directoryState === 'loading' || directoryState === 'idle'
-		? '正在缓存全市场股票目录…'
+		? '正在缓存股票与沪深 ETF 目录…'
 		: directoryState === 'error'
 			? '目录暂不可用，可直接输入6位代码'
-			: `${directoryState === 'cached' ? '本机缓存' : '已缓存'} ${directory.length.toLocaleString('zh-CN')} 只A股 · 名称/代码均可搜索`;
+			: `${directoryState === 'cached' ? '本机缓存' : '已缓存'} ${directory.length.toLocaleString('zh-CN')} 个股票 / ETF 标的 · 名称/代码均可搜索`;
 	return (
 		<header className="stock-ai-search-hero">
 			<div className="stock-ai-research-options">
@@ -615,18 +624,18 @@ function AnalysisSearch({ query, mode, directory, directoryState, onQuery, onSub
 			</div>
 			<div>
 				<span><BrainCircuit size={15} />STOCK DECISION SYSTEM</span>
-				<h2>个股 AI 分析</h2>
+				<h2>股票 / ETF AI 分析</h2>
 				<p>{descriptions[mode]}</p>
 			</div>
 			<form onSubmit={onSubmit}>
 				<div className="stock-ai-search-control" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setExpanded(false); }}>
-					<label><Search size={17} /><input value={query} onChange={(event) => { onQuery(event.target.value); setExpanded(true); setActiveIndex(0); }} onFocus={() => setExpanded(true)} onKeyDown={handleKeyDown} placeholder="输入股票名称或代码，如 贵州茅台 / 600519" aria-label="股票名称或代码" aria-autocomplete="list" aria-controls="stock-ai-search-suggestions" aria-expanded={expanded && suggestions.length > 0} /></label>
-					<small className={directoryState === 'error' ? 'error' : ''}>{directoryHint}</small>
+					<label><Search size={17} /><input value={query} onChange={(event) => { onQuery(event.target.value); setExpanded(true); setActiveIndex(0); }} onFocus={() => setExpanded(true)} onKeyDown={handleKeyDown} placeholder="股票或 ETF 名称 / 代码，如 沪深300ETF / 510300" aria-label="股票或 ETF 名称或代码" aria-autocomplete="list" aria-controls="stock-ai-search-suggestions" aria-expanded={expanded && suggestions.length > 0} /></label>
+					<small className={directoryState === 'error' ? 'error' : ''} title={directoryWarnings.join('；')}>{directoryHint}{directoryWarnings.length > 0 ? ` · ${directoryWarnings.join('；')}` : ''}</small>
 					{expanded && query.trim() && suggestions.length > 0 && (
 						<div className="stock-ai-search-suggestions" id="stock-ai-search-suggestions" role="listbox">
 							{suggestions.map((stock, index) => (
 								<button type="button" role="option" aria-selected={index === activeIndex} className={index === activeIndex ? 'active' : ''} onMouseDown={(event) => event.preventDefault()} onClick={() => chooseSuggestion(stock)} onMouseEnter={() => setActiveIndex(index)} key={stock.symbol}>
-									<span><strong>{stock.name}</strong><small>{stockMarketLabel(stock.symbol)}</small></span>
+									<span><strong>{stock.name}</strong><small>{stockMarketLabel(stock.symbol)} · {stock.instrument_type === 'etf' ? 'ETF' : '股票'}</small></span>
 									<em>{stock.code}</em>
 								</button>
 							))}
@@ -692,8 +701,8 @@ function StockAIEmpty({ onSelect }: { onSelect: (symbol: string) => void }) {
 	return (
 		<div className="stock-ai-empty">
 			<div className="stock-ai-empty-orbit"><BrainCircuit size={34} /></div>
-			<h3>从一只股票开始建立完整交易预案</h3>
-			<p>系统会同时评估趋势、动能、量价、题材、市场环境、基准超额收益与风险，不需要预先选择分析流派。</p>
+			<h3>从一只股票或 ETF 开始研究</h3>
+			<p>输入名称或代码，选择用途、周期与研究深度，查看带来源的判断、反证和后续核验条件。</p>
 			<div>{examples.map((symbol) => <button type="button" onClick={() => onSelect(symbol)} key={symbol}>{symbol}</button>)}</div>
 		</div>
 	);
@@ -1391,7 +1400,8 @@ function loadAnalysisHistory(): AnalysisHistoryItem[] {
 	}
 }
 
-function buildPlanText(analysis: StockAIAnalysis) {
+function buildPlanText(analysis: InstrumentAnalysis) {
+	if (analysis.instrument_type === 'etf') return [researchPlanText(analysis), etfSnapshotText(analysis)].filter(Boolean).join('\n\n');
 	if (analysis.research_report) return researchPlanText(analysis);
 	if (isShortTermDecision(analysis)) {
 		const playbook = analysis.action_plan.short_term_playbook;
@@ -1466,7 +1476,7 @@ function canvasToPNGBlob(canvas: HTMLCanvasElement) {
 	});
 }
 
-function buildAnalysisImageFilename(analysis: StockAIAnalysis, mode: StockAIWorkspaceMode) {
+function buildAnalysisImageFilename(analysis: InstrumentAnalysis, mode: StockAIWorkspaceMode) {
 	const date = new Date();
 	const datePart = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
 	const stockName = sanitizeFilename(analysis.name || '个股');
@@ -1481,7 +1491,7 @@ function sanitizeFilename(value: string) {
 function workspaceModeLabel(mode: StockAIWorkspaceMode) {
 	if (mode === 'expectation') return '隔日预期';
 	if (mode === 'risk') return '风险与执行';
-	return '个股 AI 分析';
+	return '股票 / ETF AI 分析';
 }
 
 function formatExportDate(value: string) {
@@ -1549,3 +1559,5 @@ function formatTargetPrice(low?: number, high?: number) {
 	if (low && high) return `${low.toFixed(2)}—${high.toFixed(2)}`;
 	return (high || low || 0).toFixed(2);
 }
+
+function isETFCandidate(symbol: string) { return /^(5|15|16)/.test(symbol); }

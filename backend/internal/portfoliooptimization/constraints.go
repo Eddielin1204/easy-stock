@@ -269,6 +269,11 @@ func QuoteCurrent(q foundation.Quote, now time.Time) bool {
 }
 func TradingEligibility(entry foundation.StockCatalogEntry, q foundation.Quote, now time.Time) Eligibility {
 	e := Eligibility{Symbol: q.Symbol, Locked: true, TradeDate: LatestSession(now), Volume: entry.Volume, Amount: entry.Amount}
+	if foundation.IsListedFundCandidate(q.Symbol) {
+		e.Reason = "ETF逐产品交易规则与实时执行状态尚未完整核验，保留当前仓位；不套用股票涨跌停及T+1规则"
+		e.MissingFields = []string{"etf_execution_permission"}
+		return e
+	}
 	zone := time.FixedZone("Asia/Shanghai", 8*3600)
 	if !q.TradeTime.IsZero() {
 		e.QuoteTradeDate = q.TradeTime.In(zone).Format("2006-01-02")

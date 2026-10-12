@@ -33,7 +33,11 @@ func NotificationMarkdown(job ResearchJob) string {
 		}
 		list(label, items)
 	}
-	field("股票", job.Request.Symbol)
+	label := "股票"
+	if job.Request.InstrumentType == "etf" {
+		label = "ETF"
+	}
+	field(label, job.Request.Symbol)
 	field("任务", job.ID)
 	status := "完成"
 	if job.Status != "succeeded" {
@@ -62,6 +66,17 @@ func NotificationMarkdown(job ResearchJob) string {
 	}
 	field("研究结论", r.Headline)
 	field("核心判断", r.Thesis.Text)
+	if j := r.ETFJudgments; j != nil {
+		if j.Technical != nil {
+			field("方向技术面", j.Technical.Text)
+		}
+		if j.News != nil {
+			field("方向消息面", j.News.Text)
+		}
+		field("底层资产", j.Underlying.Text)
+		field("基金产品", j.Product.Text)
+		field("当前介入条件", j.Entry.Text)
+	}
 	claims("支持判断", r.Support)
 	claims("反向判断", r.Counter)
 	claims("替代解释", r.Alternatives)

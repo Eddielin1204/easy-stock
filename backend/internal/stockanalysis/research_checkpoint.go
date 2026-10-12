@@ -74,12 +74,12 @@ func beginResearchCheckpoint(ctx context.Context, request ResearchRequest, model
 	}
 	cp := execution.checkpoint
 	if cp != nil {
-		if cp.PromptVersion != ResearchPromptVersion || cp.CompressionVersion != ResearchCompressionVersion || cp.ModelIdentity != identity || researchHash(cp.Request) != researchHash(request) || cp.SnapshotHash != researchHash(snapshot) {
+		if cp.PromptVersion != researchPromptVersion(request) || cp.CompressionVersion != ResearchCompressionVersion || cp.ModelIdentity != identity || researchHash(cp.Request) != researchHash(request) || cp.SnapshotHash != researchHash(snapshot) {
 			return nil, fmt.Errorf("模型、思考设置、研究请求或证据已变化，请重新分析，不能继续旧研究")
 		}
 		return cp, nil
 	}
-	cp = &ResearchCheckpoint{PromptVersion: ResearchPromptVersion, CompressionVersion: ResearchCompressionVersion, ModelIdentity: identity, Request: request, SnapshotHash: researchHash(snapshot), Outputs: map[string]ResearchStageOutput{}}
+	cp = &ResearchCheckpoint{PromptVersion: researchPromptVersion(request), CompressionVersion: ResearchCompressionVersion, ModelIdentity: identity, Request: request, SnapshotHash: researchHash(snapshot), Outputs: map[string]ResearchStageOutput{}}
 	execution.checkpoint = cp
 	return cp, saveResearchCheckpoint(ctx, cp, snapshot)
 }
@@ -96,7 +96,7 @@ func saveResearchCheckpoint(ctx context.Context, cp *ResearchCheckpoint, snapsho
 }
 
 func (cp *ResearchCheckpoint) resumable() bool {
-	return cp != nil && cp.PromptVersion == ResearchPromptVersion && cp.CompressionVersion == ResearchCompressionVersion && (cp.Outline != nil || len(cp.Outputs) > 0)
+	return cp != nil && cp.PromptVersion == researchPromptVersion(cp.Request) && cp.CompressionVersion == ResearchCompressionVersion && (cp.Outline != nil || len(cp.Outputs) > 0)
 }
 
 func promptResearchJSON[T any](ctx context.Context, prompter agent.Prompter, prompt, label string, options promptJSONObjectOptions, cp *ResearchCheckpoint, snapshot *ResearchSnapshot) (T, error) {

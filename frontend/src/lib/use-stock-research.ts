@@ -18,7 +18,7 @@ export function useStockResearch(config: BackendConfig | null) {
 	const latestJob = useRef<ResearchJob | null>(null);
 	const refreshHistory = useCallback(async () => {
 		if (!config) return;
-		try { const response = await requestJSON<{ data: ResearchJobSummary[] }>(config, '/api/v1/stocks/research'); setHistory(response.data); }
+		try { const response = await requestJSON<{ data: ResearchJobSummary[] }>(config, '/api/v1/instruments/research'); setHistory(response.data); }
 		catch (reason) { setError(reason instanceof Error ? reason.message : '研究历史读取失败'); }
 	}, [config]);
 
@@ -31,7 +31,7 @@ export function useStockResearch(config: BackendConfig | null) {
 		let failures = 0;
 		const poll = async () => {
 			try {
-				const response = await requestJSON<{ data: ResearchJob }>(config, `/api/v1/stocks/research/${selectedID}`, { signal: controller.signal });
+				const response = await requestJSON<{ data: ResearchJob }>(config, `/api/v1/instruments/research/${selectedID}`, { signal: controller.signal });
 				if (controller.signal.aborted || currentSequence !== sequence.current) return;
 				if (!sameResearchJob(latestJob.current, response.data)) {
 					latestJob.current = response.data;
@@ -57,7 +57,7 @@ export function useStockResearch(config: BackendConfig | null) {
 		const current = ++sequence.current;
 		setStarting(true); setError(''); latestJob.current = null; setJob(null); setSelectedID('');
 		try {
-			const response = await requestJSON<{ data: ResearchJob }>(config, '/api/v1/stocks/research', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) });
+			const response = await requestJSON<{ data: ResearchJob }>(config, '/api/v1/instruments/research', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) });
 			if (sequence.current !== current) return;
 			latestJob.current = response.data;
 			setJob(response.data); setSelectedID(response.data.id); rememberSelection(response.data.id); void refreshHistory();
@@ -69,7 +69,7 @@ export function useStockResearch(config: BackendConfig | null) {
 		const current = ++sequence.current;
 		setStarting(true); setError('');
 		try {
-			const response = await requestJSON<{ data: ResearchJob }>(config, `/api/v1/stocks/research/${job.id}/resume`, { method: 'POST' });
+			const response = await requestJSON<{ data: ResearchJob }>(config, `/api/v1/instruments/research/${job.id}/resume`, { method: 'POST' });
 			if (sequence.current !== current) return;
 			latestJob.current = response.data;
 			setJob(response.data); setSelectedID(response.data.id); setSelectionVersion((value) => value + 1);
@@ -79,13 +79,13 @@ export function useStockResearch(config: BackendConfig | null) {
 	}, [config, job, starting, refreshHistory]);
 	const cancel = useCallback(async () => {
 		if (!config || !job) return;
-		try { await requestJSON(config, `/api/v1/stocks/research/${job.id}/cancel`, { method: 'POST' }); }
+		try { await requestJSON(config, `/api/v1/instruments/research/${job.id}/cancel`, { method: 'POST' }); }
 		catch (reason) { setError(reason instanceof Error ? reason.message : '停止失败'); }
 	}, [config, job]);
 	const remove = useCallback(async (id: string) => {
 		if (!config) return false;
 		try {
-			await requestJSON(config, `/api/v1/stocks/research/${id}`, { method: 'DELETE' });
+			await requestJSON(config, `/api/v1/instruments/research/${id}`, { method: 'DELETE' });
 			if (id === selectedID) clear();
 			await refreshHistory();
 			return true;
@@ -95,7 +95,7 @@ export function useStockResearch(config: BackendConfig | null) {
 		if (!config || !job) return;
 		setVerifying(true); const id = job.id;
 		try {
-			const response = await requestJSON<{ data: ResearchVerification }>(config, `/api/v1/stocks/research/${id}/verify`, { method: 'POST' });
+			const response = await requestJSON<{ data: ResearchVerification }>(config, `/api/v1/instruments/research/${id}/verify`, { method: 'POST' });
 			setJob((current) => current?.id === id ? { ...current, verification: response.data } : current);
 		} catch (reason) { setError(reason instanceof Error ? reason.message : '核验失败'); }
 		finally { setVerifying(false); }
@@ -110,5 +110,5 @@ function sameResearchJob(previous: ResearchJob | null, next: ResearchJob) {
 	const nextAnalysis = next.analysis;
 	if (Boolean(previousAnalysis) !== Boolean(nextAnalysis)) return false;
 	if (!previousAnalysis || !nextAnalysis) return true;
-	return previousAnalysis.analysis_id === nextAnalysis.analysis_id && previousAnalysis.generated_at === nextAnalysis.generated_at && previousAnalysis.scorecard.overall === nextAnalysis.scorecard.overall;
+	return previousAnalysis.analysis_id === nextAnalysis.analysis_id && previousAnalysis.generated_at === nextAnalysis.generated_at && previousAnalysis.instrument_type === nextAnalysis.instrument_type;
 }

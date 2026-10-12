@@ -8,6 +8,9 @@ import (
 // inferred from price drawdowns, prose or annualizing a cumulative report.
 func InvestmentValuationFacts(r HoldingResult) map[string]Fact {
 	out := map[string]Fact{}
+	if isETF(r.Analysis) {
+		return out
+	}
 	q := r.CurrentQuote
 	if q == nil || q.Valuation == nil {
 		return out

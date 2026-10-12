@@ -46,9 +46,9 @@ export function PortfolioSetupForm({ draft, config, directory, disabled = false,
 		if (disabled || addRequest.current) return;
 		const symbol = entry?.symbol || resolveStockDirectorySymbol(query, directory);
 		const stock = entry || directory.find((item) => item.symbol === symbol);
-		if (!symbol || !stock) { setError('未找到唯一匹配的股票，请从搜索结果中选择'); return; }
-		if (draft.holdings.some((item) => item.symbol === symbol)) { setError('这只股票已经在持仓中'); return; }
-		if (draft.holdings.length >= maxPortfolioHoldings) { setError(`最多添加 ${maxPortfolioHoldings} 只持仓股票`); return; }
+		if (!symbol || !stock) { setError('未找到唯一匹配的股票或 ETF，请从搜索结果中选择'); return; }
+		if (draft.holdings.some((item) => item.symbol === symbol)) { setError('此标的已经在持仓中'); return; }
+		if (draft.holdings.length >= maxPortfolioHoldings) { setError(`最多添加 ${maxPortfolioHoldings} 只持仓标的`); return; }
 		if (remainingWeight <= 0) { setError('当前仓位已达到 100%，请先调低已有持仓'); return; }
 		const controller = new AbortController();
 		addRequest.current = controller;
@@ -75,7 +75,7 @@ export function PortfolioSetupForm({ draft, config, directory, disabled = false,
 		const current = latestDraft.current;
 		const remaining = 100 - current.holdings.reduce((sum, item) => sum + item.weight, 0);
 		if (current.holdings.some((item) => item.symbol === symbol) || current.holdings.length >= maxPortfolioHoldings || remaining <= 0) return;
-		onChange({ ...current, holdings: [...current.holdings, { symbol, name: stock.name, weight: Math.min(10, remaining), costPrice: snapshot.entryPrice ? String(snapshot.entryPrice) : '', ...snapshot }] });
+		onChange({ ...current, holdings: [...current.holdings, { symbol, name: stock.name, instrumentType: stock.instrument_type, weight: Math.min(10, remaining), costPrice: snapshot.entryPrice ? String(snapshot.entryPrice) : '', ...snapshot }] });
 		setQuery('');
 		setSuggestionsOpen(false);
 		setError(priceError);
@@ -118,7 +118,7 @@ export function PortfolioSetupForm({ draft, config, directory, disabled = false,
 				<div><span>总盈亏</span><strong className={profitClass(valuation.profit)}>{money(valuation.profit, true)}</strong></div>
 				<div><span>持仓盈亏率</span><strong className={profitClass(valuation.profitPercent)}>{percent(valuation.profitPercent)}</strong></div>
 			</div>
-			<p className="portfolio-valuation-note">股数按总资产 × 仓位 ÷ 成本价取整，盈亏按最新价估算，不含交易费用。</p>
+			<p className="portfolio-valuation-note">持有数量按总资产 × 仓位 ÷ 成本价取整，盈亏按最新价估算，不含交易费用。</p>
 			{market.error && <p className="portfolio-quote-warning" role="status">{market.error}</p>}
 			{draft.holdings.some((holding) => portfolioHoldingCost(holding) === null) && <p className="portfolio-quote-warning">部分持仓缺少有效成本，总盈亏待补齐成本与行情后显示。</p>}
 		</section>
@@ -129,30 +129,31 @@ export function PortfolioSetupForm({ draft, config, directory, disabled = false,
   {showResearchOptions && <section className="portfolio-research-options">
    <label>持有周期<select value={draft.horizon || 'swing'} disabled={disabled} onChange={(event) => onChange({ ...draft, horizon: event.target.value as PortfolioDraft['horizon'] })}><option value="short">超短</option><option value="swing">波段</option><option value="medium">中期</option></select></label>
    <label>缺失报告研究深度<select value={draft.researchLevel || 'standard'} disabled={disabled} onChange={(event) => onChange({ ...draft, researchLevel: event.target.value as PortfolioDraft['researchLevel'] })}><option value="standard">标准</option><option value="deep">深度</option></select></label>
-   <p>自动复用过去 24 小时内的成功个股 AI 报告，只研究缺失股票。</p>
+   <p>自动复用过去 24 小时内的成功股票 / ETF AI 报告，只研究缺失标的。</p>
   </section>}
 		<section className="portfolio-holdings-section">
-			<header><span>02</span><div><strong>当前持仓</strong><small>{draft.holdings.length}/{maxPortfolioHoldings} 只股票</small></div><div className="portfolio-allocation"><span>持仓 <b>{totalWeight}%</b></span><span>现金 <b>{remainingWeight}%</b></span></div></header>
+			<header><span>02</span><div><strong>当前持仓</strong><small>{draft.holdings.length}/{maxPortfolioHoldings} 只标的</small></div><div className="portfolio-allocation"><span>持仓 <b>{totalWeight}%</b></span><span>现金 <b>{remainingWeight}%</b></span></div></header>
 			<div className="portfolio-stock-search">
-				<label><Search size={16} /><input value={query} disabled={disabled || adding || directory.length === 0 || draft.holdings.length >= maxPortfolioHoldings || remainingWeight <= 0} onChange={(event) => { setQuery(event.target.value); setSuggestionsOpen(true); setActiveSuggestion(0); }} onFocus={() => setSuggestionsOpen(true)} onKeyDown={handleSearchKey} placeholder="输入股票名称或代码" aria-label="搜索持仓股票" aria-autocomplete="list" /></label>
+				<label><Search size={16} /><input value={query} disabled={disabled || adding || directory.length === 0 || draft.holdings.length >= maxPortfolioHoldings || remainingWeight <= 0} onChange={(event) => { setQuery(event.target.value); setSuggestionsOpen(true); setActiveSuggestion(0); }} onFocus={() => setSuggestionsOpen(true)} onKeyDown={handleSearchKey} placeholder="输入股票 / ETF 名称或代码" aria-label="搜索持仓股票或 ETF" aria-autocomplete="list" /></label>
 				<button type="button" onClick={() => void addHolding()} disabled={disabled || adding || !query.trim() || remainingWeight <= 0} aria-label="添加持仓" title="添加持仓">{adding ? <LoaderCircle size={18} className="spin" /> : <Plus size={18} />}</button>
-				{suggestionsOpen && query.trim() && suggestions.length > 0 && <div className="portfolio-stock-suggestions" role="listbox">{suggestions.map((stock, index) => <button type="button" className={index === activeSuggestion ? 'active' : ''} onMouseDown={(event) => event.preventDefault()} onClick={() => void addHolding(stock)} disabled={adding || disabled} role="option" aria-selected={index === activeSuggestion} key={stock.symbol}><strong>{stock.name}</strong><span>{stock.code}</span><small>{marketLabel(stock.symbol)}</small></button>)}</div>}
+				{suggestionsOpen && query.trim() && suggestions.length > 0 && <div className="portfolio-stock-suggestions" role="listbox">{suggestions.map((stock, index) => <button type="button" className={index === activeSuggestion ? 'active' : ''} onMouseDown={(event) => event.preventDefault()} onClick={() => void addHolding(stock)} disabled={adding || disabled} role="option" aria-selected={index === activeSuggestion} key={stock.symbol}><strong>{stock.name}</strong><span>{stock.code}</span><small>{stock.instrument_type === 'etf' ? 'ETF · ' : ''}{marketLabel(stock.symbol)}</small></button>)}</div>}
 			</div>
 			<div className="portfolio-holding-list">
 				{draft.holdings.length === 0 && <div className="portfolio-empty-holdings"><WalletCards size={24} /><strong>尚未录入持仓</strong></div>}
 				{draft.holdings.map((holding, index) => {
 					const value = valuation.holdings[index];
 					const quote = market.quotes[holding.symbol];
+ const isFund = holding.instrumentType === 'etf' || directory.some(v => v.symbol === holding.symbol && v.instrument_type === 'etf');
 					return <article key={holding.symbol}>
 						<div className="portfolio-holding-identity"><i>{String(index + 1).padStart(2, '0')}</i><div><strong>{holding.name}</strong><span>{holding.symbol}</span></div></div>
 						<div className="portfolio-weight-control"><input type="range" min="1" max="100" value={holding.weight} disabled={disabled} onChange={(event) => updateWeight(holding.symbol, Number(event.target.value))} aria-label={`${holding.name}持仓占比`} /><label><input type="number" min="1" max={holding.weight + remainingWeight} value={holding.weight} disabled={disabled} onChange={(event) => updateWeight(holding.symbol, Number(event.target.value))} aria-label={`${holding.name}仓位百分比`} /><span>%</span></label></div>
 						<label className="portfolio-cost-input"><span>持仓成本</span><input inputMode="decimal" value={holding.costPrice} disabled={disabled} aria-label={`${holding.name}持仓成本`} aria-invalid={Boolean(holding.costPrice.trim()) && value.costPrice === null} onChange={(event) => updateHolding(holding.symbol, { costPrice: event.target.value })} onBlur={() => { if (!holding.costPrice.trim() && holding.entryPrice) updateHolding(holding.symbol, { costPrice: String(holding.entryPrice) }); }} placeholder={holding.entryPrice ? String(holding.entryPrice) : '请输入成本'} title={holding.entryPrice ? `添加时价格 ${holding.entryPrice} 元，可修改` : '未取得添加时价格，请填写实际成本'} /></label>
 						<button type="button" className="portfolio-remove" onClick={() => onChange({ ...draft, holdings: draft.holdings.filter((item) => item.symbol !== holding.symbol) })} disabled={disabled} aria-label={`删除${holding.name}`} title="删除"><Trash2 size={16} /></button>
 						<div className="portfolio-holding-valuation">
-							<div><span>最新价格</span><strong>{money(value.price)}</strong><small className={profitClass(quote?.change_percent ?? null)}>日涨跌 {percent(quote?.change_percent ?? null)}</small></div>
-							<div><span>持股数量（估算）</span><strong>{value.quantity === null ? '—' : `${value.quantity.toLocaleString('zh-CN')} 股`}</strong></div>
+							<div><span>最新价格</span><strong>{money(value.price, false, isFund ? 3 : 2)}</strong><small className={profitClass(quote?.change_percent ?? null)}>日涨跌 {percent(quote?.change_percent ?? null)}</small></div>
+							<div><span>持有数量（估算）</span><strong>{value.quantity === null ? '—' : `${value.quantity.toLocaleString('zh-CN')} ${isFund ? '份' : '股'}`}</strong></div>
 							<div><span>持仓市值</span><strong>{money(value.marketValue)}</strong></div>
-							<div><span>个股盈亏</span><strong className={profitClass(value.profit)}>{money(value.profit, true)}</strong></div>
+							<div><span>持仓盈亏</span><strong className={profitClass(value.profit)}>{money(value.profit, true)}</strong></div>
 							<div><span>盈亏比例</span><strong className={profitClass(value.profitPercent)}>{percent(value.profitPercent)}</strong></div>
 						</div>
 						{quote && <small className="portfolio-quote-time">{quoteTime(quote.trade_time || quote.meta?.fetched_at)}{quote.meta?.stale || market.error ? ' · 上次行情快照' : ''}</small>}
@@ -171,10 +172,10 @@ function marketLabel(symbol: string) {
 	return 'A股';
 }
 
-function money(value: number | null, signed = false) {
+function money(value: number | null, signed = false, precision = 2) {
 	if (value === null || !Number.isFinite(value)) return '—';
-	const rounded = Math.round(value * 100) / 100;
-	return `${signed && rounded > 0 ? '+' : ''}${rounded.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 元`;
+	const rounded = Math.round(value * 10 ** precision) / 10 ** precision;
+	return `${signed && rounded > 0 ? '+' : ''}${rounded.toLocaleString('zh-CN', { minimumFractionDigits: precision, maximumFractionDigits: precision })} 元`;
 }
 function percent(value: number | null) {
 	if (value === null || !Number.isFinite(value)) return '—';

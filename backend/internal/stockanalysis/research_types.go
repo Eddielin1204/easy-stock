@@ -2,9 +2,11 @@ package stockanalysis
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"easy-stock/backend/internal/agent"
+	"easy-stock/backend/internal/etfanalysis"
 	"easy-stock/backend/internal/foundation"
 )
 
@@ -12,11 +14,12 @@ const ResearchPromptVersion = "stock-research-v10"
 const ResearchValidationVersion = "stock-research-validation-v4"
 
 type ResearchRequest struct {
-	Symbol        string        `json:"symbol"`
-	Purpose       string        `json:"purpose"`
-	Horizon       string        `json:"horizon"`
-	CostPrice     *float64      `json:"cost_price,omitempty"`
-	AnalysisLevel ResearchLevel `json:"analysis_level,omitempty"`
+	InstrumentType string        `json:"instrument_type,omitempty"`
+	Symbol         string        `json:"symbol"`
+	Purpose        string        `json:"purpose"`
+	Horizon        string        `json:"horizon"`
+	CostPrice      *float64      `json:"cost_price,omitempty"`
+	AnalysisLevel  ResearchLevel `json:"analysis_level,omitempty"`
 }
 
 // Source text is evidence, not an instruction or a verified interpretation.
@@ -44,18 +47,20 @@ type PriceAnchor struct {
 }
 
 type ResearchSnapshot struct {
-	ID          string           `json:"id"`
-	Version     int              `json:"version"`
-	Symbol      string           `json:"symbol"`
-	Name        string           `json:"name"`
-	CapturedAt  time.Time        `json:"captured_at"`
-	CutoffAt    time.Time        `json:"cutoff_at"`
-	Quote       foundation.Quote `json:"quote"`
-	Sources     []ResearchSource `json:"sources"`
-	Anchors     []PriceAnchor    `json:"anchors"`
-	Limitations []string         `json:"limitations"`
-	DailyBars   []AIDailyBar     `json:"daily_bars"`
-	Baseline    Scorecard        `json:"rule_baseline"`
+	InstrumentType string                `json:"instrument_type,omitempty"`
+	ETF            *etfanalysis.Analysis `json:"etf,omitempty"`
+	ID             string                `json:"id"`
+	Version        int                   `json:"version"`
+	Symbol         string                `json:"symbol"`
+	Name           string                `json:"name"`
+	CapturedAt     time.Time             `json:"captured_at"`
+	CutoffAt       time.Time             `json:"cutoff_at"`
+	Quote          foundation.Quote      `json:"quote"`
+	Sources        []ResearchSource      `json:"sources"`
+	Anchors        []PriceAnchor         `json:"anchors"`
+	Limitations    []string              `json:"limitations"`
+	DailyBars      []AIDailyBar          `json:"daily_bars"`
+	Baseline       Scorecard             `json:"rule_baseline"`
 }
 
 type ResearchClaim struct {
@@ -141,39 +146,42 @@ type ResearchDecision struct {
 }
 
 type ResearchSynthesis struct {
-	TradingLogic     *ResearchTradingLogic `json:"trading_logic,omitempty"`
-	Headline         string                `json:"headline"`
-	Thesis           ResearchClaim         `json:"thesis"`
-	Support          []ResearchClaim       `json:"support"`
-	Counter          []ResearchClaim       `json:"counter"`
-	Alternatives     []ResearchClaim       `json:"alternatives"`
-	MainConflict     string                `json:"main_conflict"`
-	EvidenceLevel    string                `json:"evidence_level"`
-	EvidenceReasons  []string              `json:"evidence_reasons,omitempty"`
-	Limitations      []string              `json:"limitations"`
-	Conditions       []ResearchCondition   `json:"conditions"`
-	InvalidationIDs  []string              `json:"invalidation_ids"`
-	Scenarios        []ResearchScenario    `json:"scenarios"`
-	Decision         ResearchDecision      `json:"decision"`
-	BaselineRelation string                `json:"baseline_relation"`
-	BaselineReason   string                `json:"baseline_reason"`
+	ETFJudgments     *etfanalysis.Judgments `json:"etf_judgments,omitempty"`
+	TradingLogic     *ResearchTradingLogic  `json:"trading_logic,omitempty"`
+	Headline         string                 `json:"headline"`
+	Thesis           ResearchClaim          `json:"thesis"`
+	Support          []ResearchClaim        `json:"support"`
+	Counter          []ResearchClaim        `json:"counter"`
+	Alternatives     []ResearchClaim        `json:"alternatives"`
+	MainConflict     string                 `json:"main_conflict"`
+	EvidenceLevel    string                 `json:"evidence_level"`
+	EvidenceReasons  []string               `json:"evidence_reasons,omitempty"`
+	Limitations      []string               `json:"limitations"`
+	Conditions       []ResearchCondition    `json:"conditions"`
+	InvalidationIDs  []string               `json:"invalidation_ids"`
+	Scenarios        []ResearchScenario     `json:"scenarios"`
+	Decision         ResearchDecision       `json:"decision"`
+	BaselineRelation string                 `json:"baseline_relation"`
+	BaselineReason   string                 `json:"baseline_reason"`
 }
 
 // ResearchCoreSynthesis and ResearchTradeConditions are kept separate at the
 // model boundary so the model does not have to produce one large nested JSON
 // object. ResearchSynthesis remains the persisted, backward-compatible shape.
 type ResearchCoreSynthesis struct {
-	TradingLogic     *ResearchTradingLogic `json:"trading_logic,omitempty"`
-	Headline         string                `json:"headline"`
-	Thesis           ResearchClaim         `json:"thesis"`
-	Support          []ResearchClaim       `json:"support"`
-	Counter          []ResearchClaim       `json:"counter"`
-	Alternatives     []ResearchClaim       `json:"alternatives"`
-	MainConflict     string                `json:"main_conflict"`
-	EvidenceLevel    string                `json:"evidence_level"`
-	Limitations      []string              `json:"limitations"`
-	BaselineRelation string                `json:"baseline_relation"`
-	BaselineReason   string                `json:"baseline_reason"`
+	EvidenceReasons  []string               `json:"evidence_reasons,omitempty"`
+	ETFJudgments     *etfanalysis.Judgments `json:"etf_judgments,omitempty"`
+	TradingLogic     *ResearchTradingLogic  `json:"trading_logic,omitempty"`
+	Headline         string                 `json:"headline"`
+	Thesis           ResearchClaim          `json:"thesis"`
+	Support          []ResearchClaim        `json:"support"`
+	Counter          []ResearchClaim        `json:"counter"`
+	Alternatives     []ResearchClaim        `json:"alternatives"`
+	MainConflict     string                 `json:"main_conflict"`
+	EvidenceLevel    string                 `json:"evidence_level"`
+	Limitations      []string               `json:"limitations"`
+	BaselineRelation string                 `json:"baseline_relation"`
+	BaselineReason   string                 `json:"baseline_reason"`
 }
 
 type ResearchTradeConditions struct {
@@ -237,4 +245,17 @@ type ResearchVerification struct {
 	Source     string           `json:"source"`
 	Checks     []ConditionCheck `json:"checks"`
 	Summary    string           `json:"summary"`
+}
+
+// MarshalJSON keeps the ETF snapshot free of stock rating fields. The alias
+// retains ordinary unmarshalling for stored snapshots and old stock histories.
+func (s ResearchSnapshot) MarshalJSON() ([]byte, error) {
+	type alias ResearchSnapshot
+	if s.InstrumentType != "etf" {
+		return json.Marshal(alias(s))
+	}
+	return json.Marshal(struct {
+		alias
+		Baseline *Scorecard `json:"rule_baseline,omitempty"`
+	}{alias: alias(s)})
 }

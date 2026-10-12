@@ -74,6 +74,15 @@ func NewClient(opts ...Option) *Client {
 	return c
 }
 
+// RawKLine uses Sina's unadjusted market-price endpoint. Volume is in units,
+// and absent turnover amount stays missing rather than being estimated.
+func (c *Client) RawKLine(ctx context.Context, symbol, period string, limit int) ([]foundation.KLine, error) {
+	if period != "day" {
+		return nil, fmt.Errorf("raw ETF history supports daily bars")
+	}
+	return c.KLine(ctx, symbol, period, limit)
+}
+
 func (c *Client) KLine(ctx context.Context, symbol string, period string, limit int) ([]foundation.KLine, error) {
 	normalized, err := foundation.NormalizeSymbol(symbol)
 	if err != nil {

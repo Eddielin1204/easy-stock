@@ -12,6 +12,9 @@ func NeedsResearchRevalidation(report *ResearchReport) bool {
 // snapshot. Never upgrade a persisted insufficient judgment by guessing what
 // the model meant, fetch new facts, renew the 24h window, or overwrite history.
 func RevalidateReusableResearch(job ResearchJob) ResearchJob {
+	if job.Request.InstrumentType == "etf" {
+		return job
+	} // ETF checkpoints use a separate schema and execution validator.
 	if !SuccessfulResearch(job) || !NeedsResearchRevalidation(job.Analysis.ResearchReport) || job.Snapshot == nil || job.Checkpoint == nil {
 		return job
 	}

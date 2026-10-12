@@ -189,7 +189,11 @@ func validateResearch(result *ResearchSynthesis, snapshot ResearchSnapshot) ([]s
 			if condition.Operator == "lte" {
 				comparison = "不高于"
 			}
-			condition.Text = fmt.Sprintf("收盘价%s%.2f元（%s）", comparison, value, anchor.Label)
+			precision := 2
+			if snapshot.InstrumentType == "etf" {
+				precision = 3
+			}
+			condition.Text = fmt.Sprintf("收盘价%s%.*f元（%s）", comparison, precision, value, anchor.Label)
 			if condition.Window == "next_disclosure" {
 				return notes, fmt.Errorf("价格条件必须指定交易日窗口")
 			}
@@ -306,7 +310,7 @@ func validateResearch(result *ResearchSynthesis, snapshot ResearchSnapshot) ([]s
 }
 
 func researchSourceCanSupportFact(s ResearchSource) bool {
-	return s.Kind == "disclosure" || s.Kind == "company_profile" || s.Kind == "calculation" ||
+	return s.Kind == "fund_profile" || s.Kind == "fund_data" || s.Kind == "disclosure" || s.Kind == "company_profile" || s.Kind == "calculation" ||
 		(s.Kind == "announcement" && ResearchSourceHasBody(s)) || researchNewsTraceable(s)
 }
 
@@ -555,6 +559,10 @@ func researchPriceFreshnessReason(snapshot ResearchSnapshot) string {
 // A quantitative snapshot is useful while AI runs, but is not a completed plan.
 func QuantitativeOnly(analysis Analysis) Analysis {
 	analysis.ResearchReport = nil
+	if analysis.InstrumentType == "etf" {
+		analysis.Conclusion = Conclusion{Headline: "ETF资料快照 · 尚无AI研究结论", Summary: "已整理ETF投资方向、可用指数或板块走势及基金资料，等待形成AI研究判断", Source: "etf-facts"}
+		return analysis
+	}
 	analysis.Conclusion = Conclusion{Headline: "量化快照 · 尚无AI研究结论", Summary: "已采集历史量价与公司资料；规则评分仅作为研究基线，不构成已完成的AI判断", Action: "等待研究完成或补齐缺失资料", Source: "quantitative-baseline"}
 	analysis.ActionPlan = ActionPlan{DecisionMode: "non_short", DecisionLabel: "仅量化快照", PricingSource: "none", CurrentAction: "尚未形成经过证据校验的交易计划"}
 	risk := &analysis.RiskControl
@@ -618,6 +626,16 @@ func validateAnchoredPlan(plan AnchoredPricePlan, snapshot ResearchSnapshot) str
 func ApplyResearch(analysis *Analysis, report *ResearchReport, snapshot ResearchSnapshot) {
 	analysis.ResearchReport = report
 	analysis.SnapshotID = snapshot.ID
+	if analysis.InstrumentType == "etf" {
+		action := report.Decision.NewPosition
+		if report.Request.Purpose == "holding" {
+			action = report.Decision.ExistingPosition
+		}
+		analysis.Conclusion = Conclusion{Headline: report.Headline, Summary: report.Thesis.Text, Action: action, MainRisk: strings.Join(report.Limitations, "；"), Source: "etf-research"}
+		analysis.Risks = claimTexts(report.Counter)
+		analysis.AI = AISynthesisStatus{Status: "ready", Model: report.Model, Message: "ETF研究完成，已校验来源引用与条件结构"}
+		return
+	}
 	analysis.Scorecard = snapshot.Baseline
 	decision := report.Decision
 	mainRisk := "仍有未取得或未验证的风险资料"

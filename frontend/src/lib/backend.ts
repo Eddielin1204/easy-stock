@@ -537,12 +537,15 @@ export type MarketResearchItem = {
 };
 
 export type StockDirectoryEntry = {
+	instrument_type?: 'stock' | 'etf';
+	fund_type?: string;
 	symbol: string;
 	code: string;
 	name: string;
 };
 
 export type StockDirectoryData = {
+	warnings?: string[];
 	stocks: StockDirectoryEntry[];
 	total: number;
 	source: string;
@@ -999,6 +1002,7 @@ export type StockAITrendPoint = {
 };
 
 export type StockAIAnalysis = {
+	instrument_type?: 'stock';
 	analysis_id?: string;
 	snapshot_id?: string;
 	research_report?: ResearchReport;
@@ -1084,7 +1088,7 @@ export type PortfolioHoldingResult = {
 	status: 'queued' | 'running' | 'succeeded' | 'failed' | string;
  error?: string;
  completed_at?: string;
- analysis?: StockAIAnalysis;
+ analysis?: InstrumentAnalysis;
  analysis_id?: string;
  research_origin?: 'reused' | 'new' | 'shared_running';
  report_completed_at?: string;
@@ -1104,6 +1108,7 @@ export type PortfolioMetrics = {
 	top_three_percent: number;
 	concentration_hhi: number;
 	weighted_stock_score: number;
+ stock_score_coverage_percent?: number;
 	weighted_risk_score: number;
 	stop_loss_risk_percent: number;
 	stop_loss_coverage_percent?: number;
@@ -2119,3 +2124,35 @@ export type PortfolioOptimizationJob = {
  eligibility: Array<{ symbol: string; can_increase: boolean; locked: boolean; conditional: boolean; reason: string; trade_date: string; quote_trade_date?: string; liquidity_trade_date?: string; liquidity_source?: string; missing_fields?: string[]; volume?: number; amount?: number }>;
  results: PortfolioHoldingResult[]; plans: PortfolioOptimizationPlan[]; limitations: string[];
 };
+
+export type ETFProfile = StockDirectoryEntry & {
+ full_name: string; asset_class: 'equity' | 'bond' | 'commodity' | 'money' | 'unknown'; cross_border: boolean;
+ manager: string; benchmark: string; tracking_target: string; investment_scope: string; strategy: string;
+ risk_description: string; distribution: string; management_fee: string; custody_fee: string;
+ size: string; shares: string; inception: string; price_precision: number; meta: SourceMeta;
+};
+export type ETFNAVPoint = { date: string; value: number; distribution?: string };
+export type ETFHoldings = { symbol: string; asset_type: string; report_date: string; scope: string; items: Array<{code:string; symbol?:string; name:string; weight_percent:number}>; disclosed_weight_percent:number; meta: SourceMeta };
+export type ETFAnnouncement = { id:string; symbol:string; title:string; published_at:string; url:string; content?:string; content_status:string; meta:SourceMeta };
+export type ETFExecution = { session_status?: string; observation_premium_percent?: number | null; observation_basis?: string; snapshot:{ symbol:string; price:number|null; bid:number|null; ask:number|null; bid_units:number|null; ask_units:number|null; quote_at:string; iopv:number|null; iopv_at:string; quote_status:string; raw_status:string; meta:SourceMeta }; spread_percent:number|null; premium_percent:number|null; comparable:boolean; limitations:string[]; trading_rule:string; subscription_status:string };
+export type ETFDirectionFacts = {
+ classification: { primary: {key:string;label:string}; tags:Array<{key:string;label:string}>; focus:string; basis:string; status:string; sector?:string; queries:string[]; match_terms:string[]; research_focus:string[] };
+ technical?: {symbol:string;name:string;relationship:'tracking_index'|'sector_reference'|'etf_price_proxy';as_of:string;trend:string;metrics:ETFFacts['metrics'];bars:KLine[];limitations:string[]};
+ news:Array<{source_id:string;item:NewsItem;matched_terms:string[];relevance:string}>;
+ news_coverage:{status:string;from:string;to:string;queries:string[];failed_queries:string[];count:number};limitations:string[];
+};
+export type ETFFacts = {
+ direction?: ETFDirectionFacts;
+ holdings?: ETFHoldings[]; announcements?: ETFAnnouncement[]; execution?: ETFExecution;
+ actions?: {symbol: string; items: Array<{kind:string;date:string;value:number;price_effective_date?:string}>;meta:SourceMeta};
+ trend_bars?: KLine[];
+ underlying?: Array<{holding: ETFHoldings['items'][number];holding_report_date:string;financials:Array<{symbol:string;report_date:string;published_at?:string;fields:Record<string,number>;meta:SourceMeta}>;valuation?:{pe_ttm?:number;pb?:number;trade_time:string}}>;
+
+ profile: ETFProfile;
+ net_values: { symbol: string; points: ETFNAVPoint[]; income_per_ten_thousand?: ETFNAVPoint[]; seven_day_annualized?: ETFNAVPoint[]; meta: SourceMeta };
+ metrics: Array<{ label: string; value: number | null; unit: string; as_of: string; method: string }>;
+ peers: Array<{ profile: ETFProfile; quote?: Quote }>; peer_scope: string; price_basis: string;
+ limitations: string[]; execution_blockers: string[]; bars: KLine[]; benchmark_symbol?: string; benchmark_bars?: KLine[];
+};
+export type ETFAnalysis = Pick<StockAIAnalysis, 'analysis_id' | 'snapshot_id' | 'research_report' | 'symbol' | 'name' | 'generated_at' | 'quote' | 'conclusion' | 'risks' | 'ai'> & { instrument_type: 'etf'; etf: ETFFacts };
+export type InstrumentAnalysis = StockAIAnalysis | ETFAnalysis;

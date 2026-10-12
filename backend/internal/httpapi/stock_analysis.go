@@ -162,6 +162,9 @@ func (s *Server) analyzeStockWithMode(ctx context.Context, canonicalSymbol, mode
 }
 
 func (s *Server) collectStockResearch(ctx context.Context, canonicalSymbol string) (stockanalysis.Analysis, *stockanalysis.ResearchSnapshot, error) {
+	if foundation.IsListedFundCandidate(canonicalSymbol) {
+		return stockanalysis.Analysis{}, nil, fmt.Errorf("基金不能使用股票研究流程，请使用ETF分析入口")
+	}
 	normalized, err := foundation.NormalizeSymbol(canonicalSymbol)
 	if err != nil {
 		return stockanalysis.Analysis{}, nil, err

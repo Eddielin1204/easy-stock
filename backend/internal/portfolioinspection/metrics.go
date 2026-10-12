@@ -31,7 +31,7 @@ func CalculateMetrics(request Request, results []HoldingResult, rules ProfileRul
 	}
 
 	analyses := make(map[string]HoldingResult, len(results))
-	successWeight := 0
+	successWeight, stockWeight, etfWeight := 0, 0, 0
 	stopWeight, aiWeight := 0, 0
 	themeWeights := map[string]int{}
 	themeCounts := map[string]int{}
@@ -45,6 +45,17 @@ func CalculateMetrics(request Request, results []HoldingResult, rules ProfileRul
 		if result.Analysis.AI.Status == "ready" {
 			aiWeight += weight
 		}
+		if isETF(result.Analysis) {
+			etfWeight += weight
+			theme := "ETF：" + result.Analysis.ETF.Profile.TrackingTarget
+			if result.Analysis.ETF.Profile.TrackingTarget == "" {
+				theme = "ETF资产：" + result.Analysis.ETF.Profile.AssetClass
+			}
+			themeWeights[theme] += weight
+			themeCounts[theme]++
+			continue
+		}
+		stockWeight += weight
 		metrics.WeightedScore += float64(weight * result.Analysis.Scorecard.Overall)
 		metrics.WeightedRisk += float64(weight * result.Analysis.RiskControl.Score)
 		if result.Analysis.ActionPlan.DecisionMode == "short_term" {
@@ -79,10 +90,11 @@ func CalculateMetrics(request Request, results []HoldingResult, rules ProfileRul
 		metrics.CoveragePercent = float64(successWeight) / float64(metrics.TotalPositionPercent) * 100
 		metrics.StopLossCoveragePercent = round(float64(stopWeight)/float64(metrics.TotalPositionPercent)*100, 1)
 		metrics.AIResearchCoveragePercent = round(float64(aiWeight)/float64(metrics.TotalPositionPercent)*100, 1)
+		metrics.StockScoreCoveragePercent = round(float64(stockWeight)/float64(metrics.TotalPositionPercent)*100, 1)
 	}
-	if successWeight > 0 {
-		metrics.WeightedScore /= float64(successWeight)
-		metrics.WeightedRisk /= float64(successWeight)
+	if stockWeight > 0 {
+		metrics.WeightedScore /= float64(stockWeight)
+		metrics.WeightedRisk /= float64(stockWeight)
 	}
 	for theme, weight := range themeWeights {
 		metrics.ThemeExposures = append(metrics.ThemeExposures, ThemeExposure{Theme: theme, Weight: weight, Symbols: themeCounts[theme]})
@@ -91,6 +103,9 @@ func CalculateMetrics(request Request, results []HoldingResult, rules ProfileRul
 
 	metrics.HighCorrelations = calculateCorrelations(analyses)
 	metrics.RiskContributions = calculateRiskContributions(results, metrics.HighCorrelations)
+	if etfWeight > 0 {
+		metrics.StyleBreaches = append(metrics.StyleBreaches, "含ETF：个股加权分仅覆盖股票部分，不生成股票规则健康总分；ETF波动按拆分调整后的连续收盘历史估算，缺失部分未知")
+	}
 	metrics.HHI = round(metrics.HHI, 1)
 	metrics.CoveragePercent = round(metrics.CoveragePercent, 1)
 	metrics.WeightedScore = round(metrics.WeightedScore, 1)
@@ -100,8 +115,8 @@ func CalculateMetrics(request Request, results []HoldingResult, rules ProfileRul
 	metrics.RiskResilienceScore, riskWarnings = riskResilience(metrics, rules)
 	metrics.DiversificationScore, diversificationWarnings = diversification(metrics, rules, request)
 	metrics.StyleMatchScore, styleWarnings = styleMatch(metrics, rules)
-	metrics.StyleBreaches = uniqueWarnings(append(append(riskWarnings, diversificationWarnings...), styleWarnings...))
-	metrics.HealthScoreAvailable = metrics.CoveragePercent >= MinimumAICoverage && metrics.StopLossCoveragePercent >= MinimumAICoverage
+	metrics.StyleBreaches = uniqueWarnings(append(metrics.StyleBreaches, append(append(riskWarnings, diversificationWarnings...), styleWarnings...)...))
+	metrics.HealthScoreAvailable = etfWeight == 0 && metrics.CoveragePercent >= MinimumAICoverage && metrics.StopLossCoveragePercent >= MinimumAICoverage
 	if metrics.StopLossCoveragePercent < 100 {
 		metrics.StyleBreaches = append(metrics.StyleBreaches, "部分仓位缺少有效静态止损方案，预估止损风险仅覆盖已知部分，不是完整风险预算")
 	}
@@ -153,7 +168,7 @@ func chartCorrelation(left, right *stockanalysis.Analysis) (float64, bool) {
 	if left == nil || right == nil {
 		return 0, false
 	}
-	return chartReturnsCorrelation(left.Chart, right.Chart)
+	return chartReturnsCorrelation(analysisChart(left), analysisChart(right))
 }
 
 func chartReturnsCorrelation(left, right []stockanalysis.TrendPoint) (float64, bool) {
@@ -211,6 +226,12 @@ func calculateRiskContributions(results []HoldingResult, correlations []Correlat
 			continue
 		}
 		volatility := result.Analysis.Trend.ATR14Percent
+		if isETF(result.Analysis) {
+			volatility = etfVolatility(result.Analysis)
+			if volatility <= 0 {
+				continue
+			}
+		}
 		if volatility <= 0 {
 			volatility = result.Analysis.Trend.ObservedVolatility
 		}

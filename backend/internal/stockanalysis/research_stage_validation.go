@@ -47,6 +47,11 @@ func validateResearchStage(value any, snapshot ResearchSnapshot, label string) e
 		return nil
 	}
 	validateCore := func(core ResearchCoreSynthesis) error {
+		if snapshot.InstrumentType == "etf" {
+			if err := validateETFJudgments(core.ETFJudgments, snapshot); err != nil {
+				return err
+			}
+		}
 		if strings.TrimSpace(core.Headline) == "" {
 			return fmt.Errorf("缺少headline")
 		}
@@ -89,7 +94,7 @@ func validateResearchStage(value any, snapshot ResearchSnapshot, label string) e
 	case *ResearchTradeConditions:
 		return validateTrade(*stage)
 	case *ResearchSynthesis:
-		if err := validateCore(ResearchCoreSynthesis{Headline: stage.Headline, Thesis: stage.Thesis, Support: stage.Support, Counter: stage.Counter, Alternatives: stage.Alternatives, EvidenceLevel: stage.EvidenceLevel}); err != nil {
+		if err := validateCore(ResearchCoreSynthesis{ETFJudgments: stage.ETFJudgments, Headline: stage.Headline, Thesis: stage.Thesis, Support: stage.Support, Counter: stage.Counter, Alternatives: stage.Alternatives, EvidenceLevel: stage.EvidenceLevel}); err != nil {
 			return err
 		}
 		if label != "快速研判" {

@@ -143,7 +143,7 @@ func proposalPrompt(job Job) (string, error) {
 		if len(job.Results) > 6 {
 			rules = strings.Replace(rules, "输出≤8KiB，叙述各≤20字", "输出≤16KiB，叙述各≤12字", 1)
 		}
-		prompt := revisionInstruction + dossierNote + rules + "\n[资料JSON]\n" + payload
+		prompt := revisionInstruction + dossierNote + rules + pi.ETFPolicyFor(job.Results) + "\n[资料JSON]\n" + payload
 		return prompt, nil
 	})
 }
@@ -245,7 +245,7 @@ func pairedPrompt(job Job, plan Plan) (string, error) {
 			comparisonInstruction = `本次只有投资改善，所选组实际增权股须与另一组减权股给investment_comparisons:{preferred_symbol:增权股,other_symbol:减权股,dimension:business/growth/valuation/timing/portfolio_fit/risk,reason,tradeoff,evidence_refs:双方真实引用}，方向按实际weights。neither则[]。`
 		}
 		return `你是独立组合复评员。盲评A/B，未知原/目标，不假定B更好；理由仅称A/B，按实际weights选a/b/neither。同资料/时点/风格，不重做研究、不补记忆事实、不重算程序指标。
-` + reviewDossierNote + pi.ScoringPolicy + `stocks的score_scope指定评分引用组：a/b仅该组，ab两组；共享资料不等于共享持股，未持股的机会成本只写assessment。引用仅本组portfolio_facts、profile、实际持股fact或report_id+source_id。财务/量价优先fact，每维1至2条，结构引HHI/equity_top_three_percent，策略引profile.scoring_description或研究周期/角色。四维直接给分，不输出adjustments，同问题不跨维扣分；集中事实与高结构分冲突须解释。风险限低/中/高/极高，风格限匹配/部分偏离/明显偏离，置信度限高/中/低。
+` + reviewDossierNote + pi.ScoringPolicy + pi.ETFPolicyFor(results) + `stocks的score_scope指定评分引用组：a/b仅该组，ab两组；共享资料不等于共享持股，未持股的机会成本只写assessment。引用仅本组portfolio_facts、profile、实际持股fact或report_id+source_id。财务/量价优先fact，每维1至2条，结构引HHI/equity_top_three_percent，策略引profile.scoring_description或研究周期/角色。四维直接给分，不输出adjustments，同问题不跨维扣分；集中事实与高结构分冲突须解释。风险限低/中/高/极高，风格限匹配/部分偏离/明显偏离，置信度限高/中/低。
 frozen_risk_groups按risk_group_columns解读，A/B的equity_risk_exposures为股票内部暴露，引用equity_risk_exposures.完整组名。不可改组、不再输出risk_groups；科技驱动不等于芯片行业。preferred_short_term_max_percent仅评超短角色占比，不是股票总仓位上限。共享风格引用profile.字段名。
 exit_plans的research/ID对应research_exit_conditions[id,text,source_ids]，portfolio/索引对应portfolio_conditions的共享列。退出看语义清晰性；pending未成交且非自动止损，跳空仍在。目标按入场条件成立后评价，不假定已触发。
 比较经营、增长、价格、组合作用及反证，说明代价、买点、残余风险。observe/no_plan/证据等级不封锁资金。财务冲突禁用，不混行业与累计口径。允许风格内交换弹性与波动，各维不必同升；高分或行业不同不足以采纳。

@@ -40,7 +40,7 @@ type ResearchJobSummary struct {
 	Stage     string          `json:"stage"`
 	Message   string          `json:"message"`
 	Headline  string          `json:"headline"`
-	Score     int             `json:"score"`
+	Score     *int            `json:"score,omitempty"`
 	StartedAt time.Time       `json:"started_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
 }
@@ -62,7 +62,10 @@ func (job ResearchJob) Summary() ResearchJobSummary {
 		if job.Analysis.ResearchReport != nil {
 			item.Headline = job.Analysis.Conclusion.Headline
 		}
-		item.Score = job.Analysis.Scorecard.Overall
+		if job.Analysis.InstrumentType != "etf" {
+			value := job.Analysis.Scorecard.Overall
+			item.Score = &value
+		}
 	}
 	return item
 }

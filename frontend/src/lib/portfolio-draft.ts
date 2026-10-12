@@ -1,6 +1,7 @@
 import { PortfolioHolding, PortfolioTraderProfile } from './backend';
 
 export type PortfolioDraftHolding = {
+ instrumentType?: 'stock' | 'etf';
 	symbol: string;
 	name: string;
 	weight: number;

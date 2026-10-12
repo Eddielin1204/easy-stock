@@ -1,8 +1,10 @@
 package stockanalysis
 
 import (
+	"encoding/json"
 	"time"
 
+	"easy-stock/backend/internal/etfanalysis"
 	"easy-stock/backend/internal/foundation"
 	"easy-stock/backend/internal/marketemotion"
 )
@@ -36,37 +38,61 @@ type Input struct {
 }
 
 type Analysis struct {
-	AnalysisID            string               `json:"analysis_id,omitempty"`
-	SnapshotID            string               `json:"snapshot_id,omitempty"`
-	ResearchReport        *ResearchReport      `json:"research_report,omitempty"`
-	Symbol                string               `json:"symbol"`
-	Name                  string               `json:"name"`
-	GeneratedAt           time.Time            `json:"generated_at"`
-	Quote                 foundation.Quote     `json:"quote"`
-	Profile               Profile              `json:"profile"`
-	Conclusion            Conclusion           `json:"conclusion"`
-	Trend                 TrendAnalysis        `json:"trend"`
-	ShortTerm             ShortTermAnalysis    `json:"short_term"`
-	Theme                 ThemeAnalysis        `json:"theme"`
-	Fundamental           *FundamentalAnalysis `json:"fundamental,omitempty"`
-	Research              *ResearchAnalysis    `json:"research,omitempty"`
-	StockNews             *NewsAnalysis        `json:"stock_news,omitempty"`
-	ThemeNews             *NewsAnalysis        `json:"theme_news,omitempty"`
-	Market                *MarketContext       `json:"market,omitempty"`
-	Scorecard             Scorecard            `json:"scorecard"`
-	Timeframes            []TimeframeAnalysis  `json:"timeframes"`
-	Relative              RelativeStrength     `json:"relative_strength"`
-	Signals               []Signal             `json:"signals"`
-	NextDay               NextDayPlan          `json:"next_day"`
-	RiskControl           RiskControl          `json:"risk_control"`
-	ActionPlan            ActionPlan           `json:"action_plan"`
-	Risks                 []string             `json:"risks"`
-	Evidence              []Evidence           `json:"evidence"`
-	DataQuality           []DataQuality        `json:"data_quality"`
-	Chart                 []TrendPoint         `json:"chart"`
-	AI                    AISynthesisStatus    `json:"ai"`
+	InstrumentType        string                `json:"instrument_type,omitempty"`
+	ETF                   *etfanalysis.Analysis `json:"etf,omitempty"`
+	AnalysisID            string                `json:"analysis_id,omitempty"`
+	SnapshotID            string                `json:"snapshot_id,omitempty"`
+	ResearchReport        *ResearchReport       `json:"research_report,omitempty"`
+	Symbol                string                `json:"symbol"`
+	Name                  string                `json:"name"`
+	GeneratedAt           time.Time             `json:"generated_at"`
+	Quote                 foundation.Quote      `json:"quote"`
+	Profile               Profile               `json:"profile"`
+	Conclusion            Conclusion            `json:"conclusion"`
+	Trend                 TrendAnalysis         `json:"trend"`
+	ShortTerm             ShortTermAnalysis     `json:"short_term"`
+	Theme                 ThemeAnalysis         `json:"theme"`
+	Fundamental           *FundamentalAnalysis  `json:"fundamental,omitempty"`
+	Research              *ResearchAnalysis     `json:"research,omitempty"`
+	StockNews             *NewsAnalysis         `json:"stock_news,omitempty"`
+	ThemeNews             *NewsAnalysis         `json:"theme_news,omitempty"`
+	Market                *MarketContext        `json:"market,omitempty"`
+	Scorecard             Scorecard             `json:"scorecard"`
+	Timeframes            []TimeframeAnalysis   `json:"timeframes"`
+	Relative              RelativeStrength      `json:"relative_strength"`
+	Signals               []Signal              `json:"signals"`
+	NextDay               NextDayPlan           `json:"next_day"`
+	RiskControl           RiskControl           `json:"risk_control"`
+	ActionPlan            ActionPlan            `json:"action_plan"`
+	Risks                 []string              `json:"risks"`
+	Evidence              []Evidence            `json:"evidence"`
+	DataQuality           []DataQuality         `json:"data_quality"`
+	Chart                 []TrendPoint          `json:"chart"`
+	AI                    AISynthesisStatus     `json:"ai"`
 	shortTermQuantitative *ShortTermQuantitativePlan
 	dailyBars             []AIDailyBar
+}
+
+// ETF reports share the job envelope, never the stock score or company profile.
+func (a Analysis) MarshalJSON() ([]byte, error) {
+	type plain Analysis
+	if a.InstrumentType != "etf" {
+		return json.Marshal(plain(a))
+	}
+	return json.Marshal(struct {
+		InstrumentType string                `json:"instrument_type"`
+		ETF            *etfanalysis.Analysis `json:"etf"`
+		AnalysisID     string                `json:"analysis_id,omitempty"`
+		SnapshotID     string                `json:"snapshot_id,omitempty"`
+		ResearchReport *ResearchReport       `json:"research_report,omitempty"`
+		Symbol         string                `json:"symbol"`
+		Name           string                `json:"name"`
+		GeneratedAt    time.Time             `json:"generated_at"`
+		Quote          foundation.Quote      `json:"quote"`
+		Conclusion     Conclusion            `json:"conclusion"`
+		AI             AISynthesisStatus     `json:"ai"`
+		Risks          []string              `json:"risks"`
+	}{a.InstrumentType, a.ETF, a.AnalysisID, a.SnapshotID, a.ResearchReport, a.Symbol, a.Name, a.GeneratedAt, a.Quote, a.Conclusion, a.AI, a.Risks})
 }
 
 // AIDailyBar is the compact daily OHLCV representation retained for local

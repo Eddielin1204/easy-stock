@@ -3,6 +3,7 @@ package portfolioinspection
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"easy-stock/backend/internal/stockanalysis"
 )
@@ -79,6 +80,17 @@ func localReport(request Request, results []HoldingResult, metrics Metrics, rule
 			continue
 		}
 		analysis := result.Analysis
+		if isETF(analysis) {
+			rr := analysis.ResearchReport
+			h := HoldingConclusion{Symbol: analysis.Symbol, PortfolioRole: "观察", ActionPriority: "观察", Conclusion: analysis.Conclusion.Summary, Action: "核验ETF底层、产品及执行条件"}
+			if rr != nil {
+				h.Conclusion = rr.Thesis.Text
+				h.Action = rr.Decision.ExistingPosition
+			}
+			holdings = append(holdings, h)
+			limitations = append(limitations, analysis.ETF.ExecutionBlockers...)
+			continue
+		}
 		priority := "保持"
 		role := "核心"
 		if analysis.RiskControl.Score >= 80 || byContribution[result.Holding.Symbol] >= 40 {
@@ -119,6 +131,11 @@ func localReport(request Request, results []HoldingResult, metrics Metrics, rule
 }
 
 func riskLevelForMetrics(metrics Metrics, rules ProfileRules) string {
+	for _, warning := range metrics.StyleBreaches {
+		if strings.HasPrefix(warning, "含ETF：") {
+			return "待评估"
+		}
+	}
 	if extremePortfolioRisk(metrics, rules) {
 		return "极高"
 	}

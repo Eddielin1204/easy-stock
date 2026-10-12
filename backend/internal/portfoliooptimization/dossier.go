@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-const ModelPromptVersion = "portfolio-optimization-prompts-v34"
+const ModelPromptVersion = "portfolio-optimization-prompts-v35"
 const MaxModelPromptBytes = 64 * 1024
 
 // Stage sizes below are compression targets, not model context limits. Rich
@@ -52,7 +52,7 @@ func (d dossierDriver) MarshalJSON() ([]byte, error) {
 	return json.Marshal([3]any{d.Name, d.MarketStatus, d.Evidence})
 }
 
-var stockDossierColumns = []string{"symbol", "name", "report_id", "cutoff_at", "purpose", "horizon", "decision_reason", "prior_position_opinion", "prior_blockers", "thesis", "support", "counter", "business", "drivers", "catalysts", "limitations", "earnings_disclosure", "anchors", "sources"}
+var stockDossierColumns = []string{"symbol", "name", "report_id", "cutoff_at", "purpose", "horizon", "decision_reason", "prior_position_opinion", "prior_blockers", "thesis", "support", "counter", "business", "drivers", "catalysts", "limitations", "earnings_disclosure", "anchors", "sources", "instrument_type", "etf"}
 
 var newsDossierColumns = []string{"provider", "url", "published_at", "content_status", "traceable", "excerpt"}
 
@@ -101,6 +101,10 @@ func stockDossier(r pi.HoldingResult, detail int) map[string]any {
 			break
 		}
 		counter = append(counter, dossierClaim{shortText(c.Text, max(detail, 30)), refs(c.SourceIDs)})
+	}
+	d["instrument_type"] = r.Analysis.InstrumentType
+	if r.Analysis.InstrumentType == "etf" && r.Analysis.ETF != nil {
+		d["etf"] = r.Analysis.ETF.PortfolioFacts()
 	}
 	d["counter"] = counter
 	support := []dossierClaim{}
@@ -368,6 +372,10 @@ func compactStockDossier(r pi.HoldingResult) map[string]any {
 	counter := d["counter"].([]dossierClaim)
 	for i := range counter {
 		counter[i].Text = shortText(counter[i].Text, 24)
+	}
+	d["instrument_type"] = r.Analysis.InstrumentType
+	if r.Analysis.InstrumentType == "etf" && r.Analysis.ETF != nil {
+		d["etf"] = r.Analysis.ETF.PortfolioFacts()
 	}
 	d["counter"] = counter
 	// Keep driver identity and status; the main explanation is in the thesis.

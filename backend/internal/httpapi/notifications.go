@@ -15,8 +15,12 @@ func (s *Server) notifyStockResearch(job stockanalysis.ResearchJob) {
 	if !failed {
 		status = "完成"
 	}
+	label := "个股研究"
+	if job.Request.InstrumentType == "etf" {
+		label = "ETF研究"
+	}
 	s.notifications.Publish(notification.Event{Kind: "stock_research", Failed: failed, Message: notification.Message{
-		Title: "easy-stock 个股研究" + status,
+		Title: "easy-stock " + label + status,
 		Text:  stockanalysis.NotificationMarkdown(job),
 	}})
 }

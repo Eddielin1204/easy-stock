@@ -15,7 +15,11 @@ func (s *Server) resolvePortfolioResearch(ctx context.Context, holding portfolio
 	if holding.Weight == 0 {
 		purpose = "new_position"
 	}
-	job, origin, err := s.stockResearch.ResolveForPortfolio(ctx, stockanalysis.ResearchRequest{Symbol: holding.Symbol, Purpose: purpose, Horizon: request.Horizon, CostPrice: holding.CostPrice, AnalysisLevel: request.ResearchLevel}, asOf, force, resumeID)
+	researchRequest, err := s.resolveResearchInstrument(ctx, stockanalysis.ResearchRequest{Symbol: holding.Symbol, Purpose: purpose, Horizon: request.Horizon, CostPrice: holding.CostPrice, AnalysisLevel: request.ResearchLevel}, true)
+	if err != nil {
+		return result, err
+	}
+	job, origin, err := s.stockResearch.ResolveForPortfolio(ctx, researchRequest, asOf, force, resumeID)
 	if err != nil {
 		return result, err
 	}
@@ -47,8 +51,8 @@ func (s *Server) resolvePortfolioResearch(ctx context.Context, holding portfolio
 	if job.Analysis != nil && job.Analysis.ResearchReport != nil {
 		result.ResearchCutoffAt = job.Analysis.ResearchReport.CutoffAt
 	}
-	if !stockanalysis.SuccessfulResearch(job) {
-		return result, fmt.Errorf("%s 个股AI研究未成功：%s；量化快照不算AI报告", holding.Symbol, firstPortfolioMessage(job.Error, job.Message))
+	if !stockanalysis.SuccessfulInstrumentResearch(job) {
+		return result, fmt.Errorf("%s 标的AI研究未成功：%s；量化快照不算AI报告", holding.Symbol, firstPortfolioMessage(job.Error, job.Message))
 	}
 	result.Status = "succeeded"
 	return result, nil

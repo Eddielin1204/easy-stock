@@ -9,7 +9,7 @@ import (
 
 const (
 	MaxHoldings        = 10
-	PromptVersion      = "portfolio-inspection-v6"
+	PromptVersion      = "portfolio-inspection-v7"
 	AlgorithmVersion   = "portfolio-ai-score-v4"
 	MinimumAICoverage  = 70
 	DefaultConcurrency = 2
@@ -91,6 +91,7 @@ type RiskContribution struct {
 }
 
 type Metrics struct {
+	StockScoreCoveragePercent float64            `json:"stock_score_coverage_percent"`
 	TotalPositionPercent      int                `json:"total_position_percent"`
 	CashPercent               int                `json:"cash_percent"`
 	CoveragePercent           float64            `json:"coverage_percent"`

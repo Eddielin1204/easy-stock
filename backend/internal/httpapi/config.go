@@ -97,6 +97,27 @@ type StockDirectoryProvider interface {
 	StockCatalog(ctx context.Context) ([]foundation.StockCatalogEntry, error)
 }
 
+type ETFActionProvider interface {
+	ETFActions(context.Context, string) (foundation.ETFActions, error)
+}
+type ETFExecutionProvider interface {
+	ETFExecution(context.Context, string) (foundation.ETFExecution, error)
+}
+type ETFEvidenceProvider interface {
+	ETFHoldings(context.Context, string, string) (foundation.ETFHoldings, error)
+	ETFDisclosures(context.Context, string) ([]foundation.ETFAnnouncement, error)
+	ETFAnnouncementBody(context.Context, foundation.ETFAnnouncement) (foundation.ETFAnnouncement, error)
+}
+type ETFProvider interface {
+	ETFDirectory(context.Context) ([]foundation.Instrument, error)
+	ETFProfile(context.Context, string) (foundation.ETFProfile, error)
+	ETFNetValues(context.Context, string) (foundation.ETFNetValues, error)
+}
+
+type RawKLineProvider interface {
+	RawKLine(context.Context, string, string, int) ([]foundation.KLine, error)
+}
+
 type HotStockProvider interface {
 	HotStockRanks(ctx context.Context, limit int) []foundation.HotStockRankList
 }
@@ -127,7 +148,19 @@ type ReviewImporter interface {
 	ImportURL(ctx context.Context, rawURL string) (review.Post, error)
 }
 
+type ETFDirectionMarketProvider interface {
+	ETFIndexSeries(context.Context, string, int) (foundation.ETFMarketSeries, error)
+	ETFSectorSeries(context.Context, string, int) (foundation.ETFMarketSeries, error)
+}
+
 type Config struct {
+	ETFDirectionMarket       ETFDirectionMarketProvider
+	ETFUnderlyingFinancials  StockFinancialSupplementProvider
+	ETFUnderlyingValuation   StockValuationProvider
+	ETFExecution             ETFExecutionProvider
+	ETF                      ETFProvider
+	ETFKLinePrimary          RawKLineProvider
+	ETFKLineFallback         RawKLineProvider
 	Token                    string
 	Realtime                 RealtimeProvider
 	KLinePrimary             KLineProvider

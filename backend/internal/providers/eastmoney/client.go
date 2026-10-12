@@ -25,6 +25,7 @@ type Client struct {
 	announcementBaseURL string
 	reportBaseURL       string
 	newsSearchBaseURL   string
+	indexSearchBaseURL  string
 	thsBaseURL          string
 	httpClient          *http.Client
 	poolMu              sync.Mutex
@@ -142,6 +143,19 @@ func NewClient(opts ...Option) *Client {
 }
 
 func (c *Client) KLine(ctx context.Context, symbol string, period string, limit int) ([]foundation.KLine, error) {
+	return c.klineWithAdjustment(ctx, symbol, period, limit, "1")
+}
+
+func (c *Client) RawKLine(ctx context.Context, symbol string, period string, limit int) ([]foundation.KLine, error) {
+	lines, err := c.klineWithAdjustment(ctx, symbol, period, limit, "0")
+	for i := range lines {
+		lines[i].Volume *= 100
+		lines[i].Meta.Source = "eastmoney:raw-kline"
+	}
+	return lines, err
+}
+
+func (c *Client) klineWithAdjustment(ctx context.Context, symbol string, period string, limit int, adjustment string) ([]foundation.KLine, error) {
 	normalized, err := foundation.NormalizeSymbol(symbol)
 	if err != nil {
 		return nil, err
@@ -160,7 +174,7 @@ func (c *Client) KLine(ctx context.Context, symbol string, period string, limit 
 	params.Set("fields1", "f1,f2,f3,f4,f5,f6")
 	params.Set("fields2", "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61")
 	params.Set("klt", klt)
-	params.Set("fqt", "1")
+	params.Set("fqt", adjustment)
 	params.Set("end", "20500101")
 	params.Set("lmt", strconv.Itoa(limit))
 	params.Set("_", strconv.FormatInt(time.Now().UnixMilli(), 10))

@@ -1,6 +1,18 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { PortfolioSetupForm } from './PortfolioSetupForm';
+
+vi.mock('../lib/use-portfolio-quotes', () => ({
+ usePortfolioQuotes: () => ({quotes:{'510300.SH':{symbol:'510300.SH',price:1.237,change_percent:.05,trade_time:'2026-10-09T10:00:00+08:00'}},loading:false,error:'',refresh:()=>{}}),
+ loadPortfolioQuotes:vi.fn(),
+}));
+
+describe('ETF portfolio editing',()=>{
+ it('keeps three-decimal quotes, fund units and raw valuation arithmetic',()=>{
+  const html=renderToStaticMarkup(<PortfolioSetupForm draft={{profile:'balanced',totalAssets:10000,holdings:[{symbol:'510300.SH',name:'样本ETF',instrumentType:'etf',weight:50,costPrice:'1.236'}]}} directory={[]} actionLabel="分析" busyLabel="分析中" onChange={()=>{}} onSubmit={()=>{}} />);
+  expect(html).toContain('1.237 元');expect(html).toContain('份');expect(html).not.toContain('1.24 元');expect(html).toContain('+0.05%');
+ });
+});
 
 describe('PortfolioSetupForm', () => {
 	it('keeps every holding slider on a stable 1-100 scale', () => {

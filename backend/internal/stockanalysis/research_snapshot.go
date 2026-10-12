@@ -24,6 +24,9 @@ func NewResearchID() string {
 }
 
 func NormalizeResearchRequest(request ResearchRequest) (ResearchRequest, error) {
+	if request.InstrumentType != "" && request.InstrumentType != "stock" && request.InstrumentType != "etf" {
+		return request, fmt.Errorf("unsupported instrument type")
+	}
 	symbol, err := foundation.NormalizeSymbol(request.Symbol)
 	if err != nil {
 		return request, err

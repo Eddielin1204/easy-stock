@@ -24,6 +24,7 @@ import (
 	"easy-stock/backend/internal/providers/cls"
 	"easy-stock/backend/internal/providers/duanxianxia"
 	"easy-stock/backend/internal/providers/eastmoney"
+	"easy-stock/backend/internal/providers/fund"
 	futurespositionprovider "easy-stock/backend/internal/providers/futuresposition"
 	"easy-stock/backend/internal/providers/hotstock"
 	marketoverviewprovider "easy-stock/backend/internal/providers/marketoverview"
@@ -38,6 +39,13 @@ import (
 )
 
 type Server struct {
+	etfDirectionMarket       ETFDirectionMarketProvider
+	etfUnderlyingFinancials  StockFinancialSupplementProvider
+	etfUnderlyingValuation   StockValuationProvider
+	etfExecution             ETFExecutionProvider
+	etfProvider              ETFProvider
+	etfKLinePrimary          RawKLineProvider
+	etfKLineFallback         RawKLineProvider
 	ladderThemeAI            *ladderThemeAI
 	mux                      *http.ServeMux
 	token                    string
@@ -107,6 +115,27 @@ func NewServer(config any) *Server {
 	sinaClient := sina.NewClient()
 	eastMoneyClient := eastmoney.NewClient()
 	tencentClient := tencent.NewClient()
+	if cfg.ETF == nil {
+		cfg.ETF = fund.NewClient()
+		if cfg.ETFDirectionMarket == nil {
+			cfg.ETFDirectionMarket = eastMoneyClient
+		}
+		if cfg.ETFUnderlyingFinancials == nil {
+			cfg.ETFUnderlyingFinancials = sinaClient
+		}
+		if cfg.ETFUnderlyingValuation == nil {
+			cfg.ETFUnderlyingValuation = tencentClient
+		}
+		if cfg.ETFExecution == nil {
+			cfg.ETFExecution = sinaClient
+		}
+	}
+	if cfg.ETFKLinePrimary == nil {
+		cfg.ETFKLinePrimary = eastMoneyClient
+	}
+	if cfg.ETFKLineFallback == nil {
+		cfg.ETFKLineFallback = sinaClient
+	}
 	clsClient := cls.NewClient()
 	if cfg.Realtime == nil {
 		if cfg.StockValuation == nil {
@@ -306,6 +335,8 @@ func NewServer(config any) *Server {
 		})
 	}
 	s := &Server{
+		etfUnderlyingFinancials: cfg.ETFUnderlyingFinancials, etfUnderlyingValuation: cfg.ETFUnderlyingValuation,
+		etfDirectionMarket: cfg.ETFDirectionMarket, etfExecution: cfg.ETFExecution, etfProvider: cfg.ETF, etfKLinePrimary: cfg.ETFKLinePrimary, etfKLineFallback: cfg.ETFKLineFallback,
 		mux:                      http.NewServeMux(),
 		token:                    cfg.Token,
 		realtimeProvider:         cfg.Realtime,
@@ -606,6 +637,15 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/stocks/research/{id}/verify", s.stockResearchVerify)
 	s.mux.HandleFunc("GET /api/v1/stocks/research/{id}/snapshot", s.stockResearchSnapshot)
 	s.mux.HandleFunc("GET /api/v1/stocks/directory", s.stockDirectoryHandler)
+	s.mux.HandleFunc("GET /api/v1/instruments", s.instrumentDirectoryHandler)
+	s.mux.HandleFunc("POST /api/v1/instruments/research", s.stockResearchCreate)
+	s.mux.HandleFunc("GET /api/v1/instruments/research", s.stockResearchList)
+	s.mux.HandleFunc("GET /api/v1/instruments/research/{id}", s.stockResearchGet)
+	s.mux.HandleFunc("DELETE /api/v1/instruments/research/{id}", s.stockResearchDelete)
+	s.mux.HandleFunc("POST /api/v1/instruments/research/{id}/cancel", s.stockResearchCancel)
+	s.mux.HandleFunc("POST /api/v1/instruments/research/{id}/resume", s.stockResearchResume)
+	s.mux.HandleFunc("POST /api/v1/instruments/research/{id}/verify", s.stockResearchVerify)
+	s.mux.HandleFunc("GET /api/v1/instruments/research/{id}/snapshot", s.stockResearchSnapshot)
 	s.mux.HandleFunc("GET /api/v1/stocks/hot-ranks", s.hotStockRanksHandler)
 	s.mux.HandleFunc("POST /api/v1/portfolio-inspections/{id}/optimizations", s.portfolioOptimizationCreate)
 	s.mux.HandleFunc("GET /api/v1/portfolio-inspections/{id}/optimizations", s.portfolioOptimizationList)

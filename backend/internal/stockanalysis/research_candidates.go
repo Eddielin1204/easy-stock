@@ -27,7 +27,7 @@ func (s *ResearchStore) RecentReusable(ctx context.Context, asOf time.Time, limi
 		if err := json.Unmarshal([]byte(raw), &j); err != nil {
 			return nil, err
 		}
-		if SuccessfulResearch(j) && !seen[j.Request.Symbol] {
+		if SuccessfulStockResearch(j) && !seen[j.Request.Symbol] {
 			seen[j.Request.Symbol] = true
 			jobs = append(jobs, j)
 		}
